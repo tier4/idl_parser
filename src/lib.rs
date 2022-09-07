@@ -1,3 +1,6 @@
+pub(crate) mod character;
+pub(crate) mod parser;
+
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
