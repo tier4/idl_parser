@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 nom = "7.1"
+num-bigint = "0.4"
+num-traits = "0.2"
