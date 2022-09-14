@@ -10,12 +10,14 @@ pub enum Literal {
     Char(char),
     String(String),
     Integer(BigInt),
+    FixedPoint(FixedPoint),
+    FloatingPoint(f64),
 }
 
 /// `FixedPoint` represents a fixed point number.
-/// `FixedPoint::value / 10^FixedPoint::scale`
+/// The actual value is `value / 10^scale`.
 #[derive(Debug, PartialEq, PartialOrd)]
 pub struct FixedPoint {
-    value: BigInt,
-    scale: u64,
+    pub value: BigInt,
+    pub scale: u64,
 }

@@ -15,7 +15,7 @@ use num_traits::Zero;
 
 use crate::{
     character::{BELL, BS, CR, FF, HT, LF, VT},
-    expr::{Expr, Literal},
+    expr::{Expr, FixedPoint, Literal},
 };
 
 type PResult<'a, OUT> = IResult<&'a str, OUT, VerboseError<&'a str>>;
@@ -156,8 +156,19 @@ fn parse_literal(input: &str) -> PResult<Expr> {
     Ok((input, Expr::Literal(literal)))
 }
 
+fn parse_sign(input: &str) -> PResult<bool> {
+    let (input, sign) = tag::<&str, &str, VerboseError<&str>>("-")(input).unwrap_or((input, ""));
+    match sign {
+        "-" => Ok((input, true)),
+        "" => Ok((input, false)),
+        _ => unreachable!(),
+    }
+}
+
 fn parse_num(input: &str) -> PResult<Literal> {
-    let (input, integer) =
+    let (input, sign) = parse_sign(input)?;
+
+    let (input, mut integer) =
         if let Ok((input, _)) = tag::<&str, &str, VerboseError<&str>>("0.")(input) {
             (input, BigInt::zero())
         } else {
@@ -166,13 +177,48 @@ fn parse_num(input: &str) -> PResult<Literal> {
                 (input, num)
             } else {
                 // decimal
-                return Ok((input, Literal::Integer(num)));
+                let result = if sign { num * -1 } else { num };
+                return Ok((input, Literal::Integer(result)));
             }
         };
 
     // floating- or fixed-point
     let (input, fraction) = digit1(input)?;
-    todo!()
+    let (input, c) = alt((tag("d"), tag("D"), tag("e"), tag("E")))(input)?;
+    match c {
+        "d" | "D" => {
+            let mut scale = 0;
+            for n in fraction.bytes() {
+                let val = n - '0' as u8;
+                integer *= 10;
+                integer += val;
+                scale += 1;
+            }
+            let value = if sign { integer * -1 } else { integer };
+            let result = Literal::FixedPoint(FixedPoint { value, scale });
+            Ok((input, result))
+        }
+        "e" | "E" => {
+            let (input, exp_sign) =
+                tag::<&str, &str, VerboseError<&str>>("-")(input).unwrap_or((input, ""));
+            let sign = if sign { "-" } else { "" };
+
+            let (input, float_num) = if exp_sign == "-" {
+                let (input, exp) = parse_decimal(input)?;
+                (input, format!("{sign}{integer}.{fraction}e-{exp}"))
+            } else if let Ok((input, exp)) = parse_decimal(input) {
+                (input, format!("{sign}{integer}.{fraction}e{exp}"))
+            } else {
+                (input, format!("{sign}{integer}.{fraction}"))
+            };
+
+            let result = float_num
+                .parse::<f64>()
+                .expect("failed to parse a floating point number");
+            Ok((input, Literal::FloatingPoint(result)))
+        }
+        _ => unreachable!(),
+    }
 }
 
 /// [1-0][0-9]*
@@ -346,6 +392,48 @@ mod tests {
         assert_eq!(
             parse_literal(input).unwrap().1,
             Expr::Literal(Literal::Integer(BigInt::from_usize(0o127).unwrap()))
+        );
+
+        let input = "-567";
+        assert_eq!(
+            parse_literal(input).unwrap().1,
+            Expr::Literal(Literal::Integer(BigInt::from_isize(-567).unwrap()))
+        );
+
+        let input = "-567.04e";
+        assert_eq!(
+            parse_literal(input).unwrap().1,
+            Expr::Literal(Literal::FloatingPoint(-567.04))
+        );
+
+        let input = "-567.04e4";
+        assert_eq!(
+            parse_literal(input).unwrap().1,
+            Expr::Literal(Literal::FloatingPoint(-567.04e4))
+        );
+
+        let input = "-567.04e-4";
+        assert_eq!(
+            parse_literal(input).unwrap().1,
+            Expr::Literal(Literal::FloatingPoint(-567.04e-4))
+        );
+
+        let input = "567.04d";
+        assert_eq!(
+            parse_literal(input).unwrap().1,
+            Expr::Literal(Literal::FixedPoint(FixedPoint {
+                value: BigInt::from_isize(56704).unwrap(),
+                scale: 2
+            }))
+        );
+
+        let input = "-567.04d";
+        assert_eq!(
+            parse_literal(input).unwrap().1,
+            Expr::Literal(Literal::FixedPoint(FixedPoint {
+                value: BigInt::from_isize(-56704).unwrap(),
+                scale: 2
+            }))
         );
 
         let input = "'\n'";
