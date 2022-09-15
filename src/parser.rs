@@ -1,40 +1,36 @@
 use nom::{
-    branch::alt,
-    bytes::complete::{tag, take_until1, take_while1},
+    branch::{alt, permutation},
+    bytes::complete::{tag, take_until, take_while},
     character::{
         complete::{anychar, digit0, digit1, hex_digit1, oct_digit0, one_of, satisfy},
-        is_alphanumeric, is_hex_digit, is_oct_digit,
+        is_alphabetic, is_alphanumeric, is_hex_digit, is_oct_digit,
     },
     combinator::{eof, fail},
-    error::VerboseError,
-    multi::many0,
+    error::{Error, VerboseError},
+    multi::{many0, many1},
     IResult,
 };
 use num_bigint::BigInt;
 use num_traits::Zero;
 
 use crate::{
-    character::{BELL, BS, CR, FF, HT, LF, VT},
-    expr::{Expr, FixedPoint, Literal},
+    character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
+    expr::{BaseType, Definition, FixedPoint, Literal, Module, ScopedName},
 };
 
 type PResult<'a, OUT> = IResult<&'a str, OUT, VerboseError<&'a str>>;
 
-// fn parse_comment(input: &str) -> PResult<Expr> {}
-
-pub fn parse(input: &str) -> PResult<Expr> {
+pub fn parse(input: &str) -> PResult<Literal> {
     parse_literal(input)
 }
 
 fn parse_comment(input: &str) -> PResult<&str> {
-    skip_space0(input)?;
-
     let (input, c) = alt((tag("//"), tag("/*")))(input)?;
 
     let (input, comment) = match c {
         "//" => alt((tag("\n"), eof))(input)?,
         "/*" => {
-            let (input, c) = take_until1("*/")(input)?;
+            let (input, c) = take_until("*/")(input)?;
             let (input, _) = tag("*/")(input)?;
             (input, c)
         }
@@ -44,12 +40,230 @@ fn parse_comment(input: &str) -> PResult<&str> {
     Ok((input, comment))
 }
 
-fn parse_id(input: &str) -> PResult<&str> {
-    take_while1(|c| c == '_' || is_alphanumeric(c as u8))(input)
+/// ```text
+/// <definition> ::= <module_dcl> ";"
+///                | <const_dcl> ";"
+///                | <type_dcl> ";"
+/// ```
+fn parse_definition(input: &str) -> PResult<Definition> {
+    todo!()
 }
 
-fn skip_space0(input: &str) -> PResult<()> {
-    let (input, _) = many0(tag(" "))(input)?;
+/// ```text
+/// <module_decl> ::= "module" <identifier> "{" <definition>+ "}"
+/// ```
+fn parse_module(input: &str) -> PResult<Module> {
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("module")(input)?;
+    let (input, _) = skip_space_and_comment1(input)?;
+
+    // <identifier>
+    let (input, id) = parse_id(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("{")(input)?;
+
+    // <definitions>+
+    let (input, definitions) = many1(parse_definition)(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("}")(input)?;
+
+    Ok((input, Module { id, definitions }))
+}
+
+/// ```text
+/// <identifier>
+/// ```
+fn parse_id(input: &str) -> PResult<String> {
+    let (input, head) = satisfy(|c| c == '_' || is_alphabetic(c as u8))(input)?;
+    let (input, tail) = take_while(|c| c == '_' || is_alphanumeric(c as u8))(input)?;
+
+    let mut result = String::new();
+    result.push(head);
+    result.push_str(tail);
+    Ok((input, result))
+}
+
+/// ```text
+/// <scoped_name> ::= <identifier>
+///                 | "::" <identifier>
+///                 | <scoped_name> "::" <identifier>
+/// ```
+fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
+    let mut ids = Vec::new();
+    loop {
+        let (next, id) = parse_id(input)?;
+        ids.push(id);
+
+        if let Ok((next, _)) = tag::<&str, &str, Error<&str>>("::")(next) {
+            input = next;
+        } else {
+            return Ok((next, ScopedName { ids }));
+        }
+    }
+}
+
+/// ```text
+/// <base_type_spec> ::= <integer_type>
+///                    | <floating_pt_type>
+///                    | <char_type>
+///                    | <wide_char_type>
+///                    | <boolean_type>
+///                    | <octet_type>
+///
+/// <char_type> ::= "char"
+/// <wide_char_type> ::= "wchar"
+/// <boolean_type> ::= "boolean"
+/// <octet_type> ::= "octet"
+/// ```
+fn parse_base_type_spec(input: &str) -> PResult<BaseType> {
+    fn parse_char(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("char")(input)?;
+        Ok((input, BaseType::Char))
+    }
+
+    fn parse_wchar(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("wchar")(input)?;
+        Ok((input, BaseType::WChar))
+    }
+
+    fn parse_boolean(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("boolean")(input)?;
+        Ok((input, BaseType::Boolean))
+    }
+
+    fn parse_octet(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("octet")(input)?;
+        Ok((input, BaseType::Octet))
+    }
+
+    alt((
+        parse_integer_type,
+        parse_floating_pt_type,
+        parse_char,
+        parse_wchar,
+        parse_boolean,
+        parse_octet,
+    ))(input)
+}
+
+/// ```text
+/// <floating_pt_type> ::= "float"
+///                      | "double"
+///                      | "long" "double"
+/// ```
+fn parse_floating_pt_type(input: &str) -> PResult<BaseType> {
+    fn parse_float(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("float")(input)?;
+        Ok((input, BaseType::Float))
+    }
+
+    fn parse_double(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("double")(input)?;
+        Ok((input, BaseType::Float))
+    }
+
+    fn parse_long_double(input: &str) -> PResult<BaseType> {
+        let (input, _) = permutation((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
+        Ok((input, BaseType::LongLong))
+    }
+
+    alt((parse_float, parse_double, parse_long_double))(input)
+}
+
+/// ```text
+/// <integer_type> ::= <signed_int>
+///                  | <unsigned_int>
+///
+/// <signed_int> ::= <signed_short_int>
+///                | <signed_long_int>
+///                | <signed_longlong_int>
+///
+/// <signed_short_int> ::= "short"
+/// <signed_long_int> ::= "long"
+/// <signed_longlong_int> ::= "long" "long"
+///
+/// <unsigned_int> ::= <unsigned_short_int>
+///                  | <unsigned_long_int>
+///                  | <unsigned_longlong_int>
+///
+/// <unsigned_short_int> ::= "unsigned" "short"
+/// <unsigned_long_int> ::= "unsigned" "long"
+/// <unsigned_longlong_int> ::= "unsigned" "long" "long"
+/// ```
+fn parse_integer_type(input: &str) -> PResult<BaseType> {
+    fn short(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("short")(input)?;
+        Ok((input, BaseType::Short))
+    }
+
+    fn long_long(input: &str) -> PResult<BaseType> {
+        let (input, _) = permutation((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
+        Ok((input, BaseType::LongLong))
+    }
+
+    fn long(input: &str) -> PResult<BaseType> {
+        let (input, _) = tag("long")(input)?;
+        Ok((input, BaseType::Long))
+    }
+
+    fn unsigned_short(input: &str) -> PResult<BaseType> {
+        let (input, _) =
+            permutation((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
+        Ok((input, BaseType::UnsignedLong))
+    }
+
+    fn unsigned_long_long(input: &str) -> PResult<BaseType> {
+        let (input, _) = permutation((
+            tag("unsigned"),
+            skip_space_and_comment1,
+            tag("long"),
+            skip_space_and_comment1,
+            tag("long"),
+        ))(input)?;
+        Ok((input, BaseType::UnsignedLongLong))
+    }
+
+    fn unsigned_long(input: &str) -> PResult<BaseType> {
+        let (input, _) =
+            permutation((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
+        Ok((input, BaseType::UnsignedLong))
+    }
+
+    alt((
+        short,
+        long_long,
+        long,
+        unsigned_short,
+        unsigned_long_long,
+        unsigned_long,
+    ))(input)
+}
+
+fn skip_space_and_comment0(input: &str) -> PResult<()> {
+    let (input, _) = many0(alt((
+        tag(" "),
+        tag(LF_S),
+        tag(CR_S),
+        tag(HT_S),
+        tag(VT_S),
+        parse_comment,
+    )))(input)?;
+
+    Ok((input, ()))
+}
+
+fn skip_space_and_comment1(input: &str) -> PResult<()> {
+    let (input, _) = many1(alt((
+        tag(" "),
+        tag(LF_S),
+        tag(CR_S),
+        tag(HT_S),
+        tag(VT_S),
+        parse_comment,
+    )))(input)?;
+
     Ok((input, ()))
 }
 
@@ -151,13 +365,12 @@ fn parse_keywards(input: &str) -> PResult<&str> {
     ))(input)
 }
 
-fn parse_literal(input: &str) -> PResult<Expr> {
-    let (input, literal) = alt((parse_num, parse_hex, parse_octal, parse_char))(input)?;
-    Ok((input, Expr::Literal(literal)))
+fn parse_literal(input: &str) -> PResult<Literal> {
+    alt((parse_num, parse_hex, parse_octal, parse_char, parse_string))(input)
 }
 
 fn parse_sign(input: &str) -> PResult<bool> {
-    let (input, sign) = tag::<&str, &str, VerboseError<&str>>("-")(input).unwrap_or((input, ""));
+    let (input, sign) = tag::<&str, &str, Error<&str>>("-")(input).unwrap_or((input, ""));
     match sign {
         "-" => Ok((input, true)),
         "" => Ok((input, false)),
@@ -168,19 +381,18 @@ fn parse_sign(input: &str) -> PResult<bool> {
 fn parse_num(input: &str) -> PResult<Literal> {
     let (input, sign) = parse_sign(input)?;
 
-    let (input, mut integer) =
-        if let Ok((input, _)) = tag::<&str, &str, VerboseError<&str>>("0.")(input) {
-            (input, BigInt::zero())
+    let (input, mut integer) = if let Ok((input, _)) = tag::<&str, &str, Error<&str>>("0.")(input) {
+        (input, BigInt::zero())
+    } else {
+        let (input, num) = parse_decimal(input)?;
+        if let Ok((input, _)) = tag::<&str, &str, Error<&str>>(".")(input) {
+            (input, num)
         } else {
-            let (input, num) = parse_decimal(input)?;
-            if let Ok((input, _)) = tag::<&str, &str, VerboseError<&str>>(".")(input) {
-                (input, num)
-            } else {
-                // decimal
-                let result = if sign { num * -1 } else { num };
-                return Ok((input, Literal::Integer(result)));
-            }
-        };
+            // decimal
+            let result = if sign { num * -1 } else { num };
+            return Ok((input, Literal::Integer(result)));
+        }
+    };
 
     // floating- or fixed-point
     let (input, fraction) = digit1(input)?;
@@ -280,9 +492,24 @@ fn parse_hex(input: &str) -> PResult<Literal> {
     Ok((input, Literal::Integer(result)))
 }
 
+fn parse_string(input: &str) -> PResult<Literal> {
+    let (mut input, _) = alt((tag("\""), tag("L\"")))(input)?;
+    let mut result = String::new();
+
+    loop {
+        if let Ok((input, _)) = tag::<&str, &str, Error<&str>>("\"")(input) {
+            return Ok((input, Literal::String(result)));
+        };
+
+        let (next, c) = parse_char_escape(input)?;
+        result.push(c);
+        input = next;
+    }
+}
+
 /// 'c', where `c` is a character or escaped character
 fn parse_char(input: &str) -> PResult<Literal> {
-    let (input, _) = tag("'")(input)?;
+    let (input, _) = alt((tag("'"), tag("L'")))(input)?;
     let (input, result) = parse_char_escape(input)?;
     let (input, _) = tag("'")(input)?;
 
@@ -290,7 +517,7 @@ fn parse_char(input: &str) -> PResult<Literal> {
 }
 
 fn parse_char_escape(input: &str) -> PResult<char> {
-    if let Ok((input, _)) = tag::<&str, &str, VerboseError<&str>>("\\")(input) {
+    if let Ok((input, _)) = tag::<&str, &str, Error<&str>>("\\")(input) {
         let (input, c) = one_of("ntvbrfa?\\'\"oxu")(input)?;
         match c {
             'n' => Ok((input, LF)),
@@ -373,73 +600,70 @@ mod tests {
         let input = "1234";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::Integer(BigInt::from_usize(1234).unwrap()))
+            Literal::Integer(BigInt::from_usize(1234).unwrap())
         );
 
         let input = "0xabcd";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::Integer(BigInt::from_usize(0xabcd).unwrap()))
+            Literal::Integer(BigInt::from_usize(0xabcd).unwrap())
         );
 
         let input = "0XEF45";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::Integer(BigInt::from_usize(0xef45).unwrap()))
+            Literal::Integer(BigInt::from_usize(0xef45).unwrap())
         );
 
         let input = "0127";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::Integer(BigInt::from_usize(0o127).unwrap()))
+            Literal::Integer(BigInt::from_usize(0o127).unwrap())
         );
 
         let input = "-567";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::Integer(BigInt::from_isize(-567).unwrap()))
+            Literal::Integer(BigInt::from_isize(-567).unwrap())
         );
 
         let input = "-567.04e";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::FloatingPoint(-567.04))
+            Literal::FloatingPoint(-567.04)
         );
 
         let input = "-567.04e4";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::FloatingPoint(-567.04e4))
+            Literal::FloatingPoint(-567.04e4)
         );
 
         let input = "-567.04e-4";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::FloatingPoint(-567.04e-4))
+            Literal::FloatingPoint(-567.04e-4)
         );
 
         let input = "567.04d";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::FixedPoint(FixedPoint {
+            Literal::FixedPoint(FixedPoint {
                 value: BigInt::from_isize(56704).unwrap(),
                 scale: 2
-            }))
+            })
         );
 
         let input = "-567.04d";
         assert_eq!(
             parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::FixedPoint(FixedPoint {
+            Literal::FixedPoint(FixedPoint {
                 value: BigInt::from_isize(-56704).unwrap(),
                 scale: 2
-            }))
+            })
         );
 
         let input = "'\n'";
-        assert_eq!(
-            parse_literal(input).unwrap().1,
-            Expr::Literal(Literal::Char('\n'))
-        );
+        assert_eq!(parse_literal(input).unwrap().1, Literal::Char('\n'));
     }
 }
