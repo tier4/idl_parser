@@ -1,5 +1,5 @@
 use nom::{
-    branch::{alt, permutation},
+    branch::alt,
     bytes::complete::{tag, take_until, take_while},
     character::{
         complete::{anychar, digit0, digit1, hex_digit1, oct_digit0, one_of, satisfy},
@@ -8,6 +8,7 @@ use nom::{
     combinator::{eof, fail},
     error::{Error, VerboseError},
     multi::{many0, many1},
+    sequence::{delimited, tuple},
     IResult,
 };
 use num_bigint::BigInt;
@@ -15,7 +16,10 @@ use num_traits::Zero;
 
 use crate::{
     character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
-    expr::{BaseType, Definition, FixedPoint, Literal, Module, ScopedName},
+    expr::{
+        BaseType, ConstExpr, ConstType, Definition, FixedPoint, Literal, Module, ScopedName,
+        StringType, UnaryOpExpr, WStringType,
+    },
 };
 
 type PResult<'a, OUT> = IResult<&'a str, OUT, VerboseError<&'a str>>;
@@ -105,6 +109,249 @@ fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
 }
 
 /// ```text
+/// <const_type> ::= <integer_type>
+///                | <floating_pt_type>
+///                | <fixed_pt_const_type>
+///                | <char_type>
+///                | <wide_char_type>
+///                | <boolean_type>
+///                | <octet_type>
+///                | <string_type>
+///                | <wide_string_type>
+///                | <scoped_name>
+/// ```
+fn parse_const_type(input: &str) -> PResult<ConstType> {
+    fn base_type(input: &str) -> PResult<ConstType> {
+        let (input, t) = parse_base_type_spec(input)?;
+        Ok((input, ConstType::BaseType(t)))
+    }
+
+    fn string_type(input: &str) -> PResult<ConstType> {
+        let (input, t) = parse_string_type(input)?;
+        Ok((input, ConstType::StringType(t)))
+    }
+
+    fn wstring_type(input: &str) -> PResult<ConstType> {
+        let (input, t) = parse_wstring_type(input)?;
+        Ok((input, ConstType::WStringType(t)))
+    }
+
+    fn scoped_name(input: &str) -> PResult<ConstType> {
+        let (input, t) = parse_scoped_name(input)?;
+        Ok((input, ConstType::ScopedName(t)))
+    }
+
+    alt((base_type, string_type, wstring_type, scoped_name))(input)
+}
+
+/// ```text
+/// <const_expr> ::= <or_expr>
+/// ```
+fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
+    parse_or_expr(input)
+}
+
+/// ```text
+/// <or_expr> ::= <xor_expr>
+///             | <or_expr> "&" <xor_expr>
+/// ```
+fn parse_or_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, left) = parse_xor_expr(input)?;
+
+    if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("|")))(input) {
+        let (input, right) = parse_or_expr(input)?;
+        Ok((input, ConstExpr::Or(Box::new(left), Box::new(right))))
+    } else {
+        Ok((input, left))
+    }
+}
+
+/// ```text
+/// <xor_expr> ::= <and_expr>
+///              | <xor_expr> "&" <and_expr>
+/// ```
+fn parse_xor_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, left) = parse_and_expr(input)?;
+
+    if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("^")))(input) {
+        let (input, right) = parse_xor_expr(input)?;
+        Ok((input, ConstExpr::Xor(Box::new(left), Box::new(right))))
+    } else {
+        Ok((input, left))
+    }
+}
+
+/// ```text
+/// <and_expr> ::= <shift_expr>
+///              | <and_expr> "&" <shift_expr>
+/// ```
+fn parse_and_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, left) = parse_shift_expr(input)?;
+
+    if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("&")))(input) {
+        let (input, right) = parse_and_expr(input)?;
+        Ok((input, ConstExpr::And(Box::new(left), Box::new(right))))
+    } else {
+        Ok((input, left))
+    }
+}
+
+/// ```text
+/// <shift_expr> ::= <add_expr>
+///                | <shift_expr> ">>" <add_expr>
+///                | <shift_expr> "<<" <add_expr>
+/// ```
+fn parse_shift_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, left) = parse_add_expr(input)?;
+
+    if let Ok((input, (_, op))) =
+        tuple((skip_space_and_comment0, alt((tag(">>"), tag("<<")))))(input)
+    {
+        let (input, right) = parse_shift_expr(input)?;
+
+        match op {
+            ">>" => Ok((input, ConstExpr::RShift(Box::new(left), Box::new(right)))),
+            "<<" => Ok((input, ConstExpr::LShift(Box::new(left), Box::new(right)))),
+            _ => unreachable!(),
+        }
+    } else {
+        Ok((input, left))
+    }
+}
+
+/// ```text
+/// <add_expr> ::= <mult_expr>
+///              | <add_expr> "+" <mult_expr>
+///              | <add_expr> "-" <mult_expr>
+/// ```
+fn parse_add_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, left) = parse_mult_expr(input)?;
+
+    if let Ok((input, (_, op))) = tuple((skip_space_and_comment0, alt((tag("+"), tag("-")))))(input)
+    {
+        let (input, right) = parse_add_expr(input)?;
+
+        match op {
+            "+" => Ok((input, ConstExpr::Add(Box::new(left), Box::new(right)))),
+            "-" => Ok((input, ConstExpr::Sub(Box::new(left), Box::new(right)))),
+            _ => unreachable!(),
+        }
+    } else {
+        Ok((input, left))
+    }
+}
+
+/// ```text
+/// <mult_expr> ::= <unary_expr>
+///               | <mult_expr> "*" <unary_expr>
+///               | <mult_expr> "/" <unary_expr>
+///               | <mult_expr> "%" <unary_expr>
+/// ```
+fn parse_mult_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, left) = parse_unary_expr(input)?;
+
+    if let Ok((input, (_, op))) =
+        tuple((skip_space_and_comment0, alt((tag("*"), tag("/"), tag("%")))))(input)
+    {
+        let (input, right) = parse_mult_expr(input)?;
+
+        match op {
+            "*" => Ok((input, ConstExpr::Mul(Box::new(left), Box::new(right)))),
+            "/" => Ok((input, ConstExpr::Div(Box::new(left), Box::new(right)))),
+            "%" => Ok((input, ConstExpr::Mod(Box::new(left), Box::new(right)))),
+            _ => unreachable!(),
+        }
+    } else {
+        Ok((input, left))
+    }
+}
+
+/// ```text
+/// <unary_expr> ::= <unary_operator> <primary_expr>
+///                | <primary_expr>
+///
+/// <unary_operator> ::= "-" | "+" | "~"
+/// ```
+fn parse_unary_expr(input: &str) -> PResult<ConstExpr> {
+    let (input, _) = skip_space_and_comment0(input)?;
+
+    let (input, op) = if let Ok((input, op)) =
+        alt((tag::<&str, &str, Error<&str>>("+"), tag("-"), tag("~")))(input)
+    {
+        (input, op)
+    } else {
+        (input, "")
+    };
+
+    let (input, expr) = parse_primary_expr(input)?;
+
+    let expr = match op {
+        "-" => UnaryOpExpr::Minus(Box::new(expr)),
+        "~" => UnaryOpExpr::Negate(Box::new(expr)),
+        "+" => UnaryOpExpr::Plus(Box::new(expr)),
+        "" => return Ok((input, expr)),
+        _ => unreachable!(),
+    };
+
+    Ok((input, ConstExpr::UnaryOp(expr)))
+}
+
+/// ```text
+/// <primary_expr> ::= <scoped_name>
+///                  | <literal>
+///                  | "(" <const_expr> ")"
+/// ```
+fn parse_primary_expr(input: &str) -> PResult<ConstExpr> {
+    fn expr_literal(input: &str) -> PResult<ConstExpr> {
+        let (input, literal) = parse_literal(input)?;
+        Ok((input, ConstExpr::Literal(literal)))
+    }
+
+    fn expr_scoped_name(input: &str) -> PResult<ConstExpr> {
+        let (input, name) = parse_scoped_name(input)?;
+        Ok((input, ConstExpr::ScopedName(name)))
+    }
+
+    let (input, _) = skip_space_and_comment0(input)?;
+
+    alt((
+        expr_literal,
+        expr_scoped_name,
+        delimited(
+            tuple((tag("("), skip_space_and_comment0)),
+            parse_const_expr,
+            tuple((skip_space_and_comment0, tag(")"))),
+        ),
+    ))(input)
+}
+
+fn parse_max_size(input: &str) -> PResult<ConstExpr> {
+    delimited(
+        tuple((skip_space_and_comment0, tag("<"), skip_space_and_comment0)),
+        parse_const_expr,
+        tuple((skip_space_and_comment0, tag(">"))),
+    )(input)
+}
+
+fn parse_string_type(input: &str) -> PResult<StringType> {
+    let (input, _) = tag("string")(input)?;
+    if let Ok((input, size)) = parse_max_size(input) {
+        Ok((input, StringType::Sized(size)))
+    } else {
+        Ok((input, StringType::UnlimitedSize))
+    }
+}
+
+fn parse_wstring_type(input: &str) -> PResult<WStringType> {
+    let (input, _) = tag("wstring")(input)?;
+    if let Ok((input, size)) = parse_max_size(input) {
+        Ok((input, WStringType::Sized(size)))
+    } else {
+        Ok((input, WStringType::UnlimitedSize))
+    }
+}
+
+/// ```text
 /// <base_type_spec> ::= <integer_type>
 ///                    | <floating_pt_type>
 ///                    | <char_type>
@@ -165,7 +412,7 @@ fn parse_floating_pt_type(input: &str) -> PResult<BaseType> {
     }
 
     fn parse_long_double(input: &str) -> PResult<BaseType> {
-        let (input, _) = permutation((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
+        let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
         Ok((input, BaseType::LongLong))
     }
 
@@ -199,7 +446,7 @@ fn parse_integer_type(input: &str) -> PResult<BaseType> {
     }
 
     fn long_long(input: &str) -> PResult<BaseType> {
-        let (input, _) = permutation((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
+        let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
         Ok((input, BaseType::LongLong))
     }
 
@@ -209,13 +456,12 @@ fn parse_integer_type(input: &str) -> PResult<BaseType> {
     }
 
     fn unsigned_short(input: &str) -> PResult<BaseType> {
-        let (input, _) =
-            permutation((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
+        let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
         Ok((input, BaseType::UnsignedLong))
     }
 
     fn unsigned_long_long(input: &str) -> PResult<BaseType> {
-        let (input, _) = permutation((
+        let (input, _) = tuple((
             tag("unsigned"),
             skip_space_and_comment1,
             tag("long"),
@@ -226,8 +472,7 @@ fn parse_integer_type(input: &str) -> PResult<BaseType> {
     }
 
     fn unsigned_long(input: &str) -> PResult<BaseType> {
-        let (input, _) =
-            permutation((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
+        let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
         Ok((input, BaseType::UnsignedLong))
     }
 
@@ -365,6 +610,16 @@ fn parse_keywards(input: &str) -> PResult<&str> {
     ))(input)
 }
 
+/// ```text
+/// <literal> ::= <integer_literal>
+///             | <floating_pt_literal>
+///             | <fixed_pt_literal>
+///             | <character_literal>
+///             | <wide_character_literal>
+///             | <boolean_literal>
+///             | <string_literal>
+///             | <wide_string_literal>
+/// ```
 fn parse_literal(input: &str) -> PResult<Literal> {
     alt((parse_num, parse_hex, parse_octal, parse_char, parse_string))(input)
 }

@@ -9,7 +9,7 @@ pub struct Module {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Const {
     pub id: String,
-    //    pub expr: Expr,
+    pub expr: ConstExpr,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -39,6 +39,50 @@ pub enum BaseType {
 
     // an opaque 8-bit quantity that is guaranteed not to undergo any change by the middleware
     Octet,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ConstExpr {
+    Or(Box<ConstExpr>, Box<ConstExpr>),
+    Xor(Box<ConstExpr>, Box<ConstExpr>),
+    And(Box<ConstExpr>, Box<ConstExpr>),
+    RShift(Box<ConstExpr>, Box<ConstExpr>),
+    LShift(Box<ConstExpr>, Box<ConstExpr>),
+    Add(Box<ConstExpr>, Box<ConstExpr>),
+    Sub(Box<ConstExpr>, Box<ConstExpr>),
+    Mul(Box<ConstExpr>, Box<ConstExpr>),
+    Div(Box<ConstExpr>, Box<ConstExpr>),
+    Mod(Box<ConstExpr>, Box<ConstExpr>),
+    UnaryOp(UnaryOpExpr),
+    Literal(Literal),
+    ScopedName(ScopedName),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum UnaryOpExpr {
+    Minus(Box<ConstExpr>),
+    Plus(Box<ConstExpr>),
+    Negate(Box<ConstExpr>),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum StringType {
+    UnlimitedSize,
+    Sized(ConstExpr),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum WStringType {
+    UnlimitedSize,
+    Sized(ConstExpr),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ConstType {
+    BaseType(BaseType),
+    ScopedName(ScopedName),
+    StringType(StringType),
+    WStringType(WStringType),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
