@@ -205,10 +205,11 @@ pub enum ConstrTypeDcl {
 pub enum TypeDcl {
     ConstrType(ConstrTypeDcl),
     Native(NativeDcl),
+    Typedef(Typedef),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub struct NativeDcl(String);
+pub struct NativeDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Typedef {

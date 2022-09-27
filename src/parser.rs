@@ -3,10 +3,10 @@ use crate::{
     expr::{
         AnyDeclarator, ArrayDeclarator, BaseType, Case, CaseLabel, ConstDcl, ConstExpr, ConstType,
         ConstrTypeDcl, Definition, ElementSpec, EnumDcl, FixedPoint, FixedPtType,
-        FloatingPointType, IntegerType, Literal, Member, Module, ScopedName, SequenceType,
-        StringType, StructDcl, StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec,
-        TypeSpec, Typedef, TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl,
-        WStringType,
+        FloatingPointType, IntegerType, Literal, Member, Module, NativeDcl, ScopedName,
+        SequenceType, StringType, StructDcl, StructDef, StructForwardDcl, SwitchTypeSpec,
+        TemplateTypeSpec, TypeDcl, TypeSpec, Typedef, TypedefType, UnaryOpExpr, UnionDcl, UnionDef,
+        UnionForwardDcl, WStringType,
     },
 };
 use nom::{
@@ -54,6 +54,51 @@ fn parse_comment(input: &str) -> PResult<&str> {
 /// ```
 fn parse_definition(input: &str) -> PResult<Definition> {
     todo!()
+}
+
+/// ```text
+/// (20) <type_dcl> ::= <constr_type_dcl>
+///                   | <native_dcl>
+///                   | <typedef_dcl>
+/// ```
+fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
+    fn constr_type(input: &str) -> PResult<TypeDcl> {
+        let (input, dcl) = parse_constr_type_dcl(input)?;
+        Ok((input, TypeDcl::ConstrType(dcl)))
+    }
+
+    fn native(input: &str) -> PResult<TypeDcl> {
+        let (input, dcl) = parse_native_dcl(input)?;
+        Ok((input, TypeDcl::Native(dcl)))
+    }
+
+    fn typedef(input: &str) -> PResult<TypeDcl> {
+        let (input, dcl) = parse_typedef_dcl(input)?;
+        Ok((input, TypeDcl::Typedef(dcl)))
+    }
+
+    alt((constr_type, native, typedef))(input)
+}
+
+/// ```text
+/// (63) <typedef_dcl> ::= "typedef" <type_declarator>
+/// ```
+fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
+    let (input, _) = tag("typedef")(input)?;
+    let (input, _) = skip_space_and_comment1(input)?;
+    parse_type_declarator(input)
+}
+
+/// ```text
+/// (61) <native_dcl> ::= "native" <simple_declarator>
+/// ```
+fn parse_native_dcl(input: &str) -> PResult<NativeDcl> {
+    let (input, _) = tag("native")(input)?;
+
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_simple_declarator(input)?;
+
+    Ok((input, NativeDcl(id)))
 }
 
 /// ```text
