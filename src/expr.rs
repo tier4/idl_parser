@@ -93,6 +93,7 @@ pub enum ConstType {
     ScopedName(ScopedName),
     StringType(StringType),
     WStringType(WStringType),
+    FixedPointConst, // constant fixed point number
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -102,6 +103,7 @@ pub enum Literal {
     Integer(BigInt),
     FixedPoint(FixedPoint),
     FloatingPoint(f64),
+    Boolean(bool),
 }
 
 /// `FixedPoint` represents a fixed point number.
