@@ -1,3 +1,14 @@
+use crate::{
+    character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
+    expr::{
+        AnyDeclarator, ArrayDeclarator, BaseType, Case, CaseLabel, ConstDcl, ConstExpr, ConstType,
+        ConstrTypeDcl, Definition, ElementSpec, EnumDcl, FixedPoint, FixedPtType,
+        FloatingPointType, IntegerType, Literal, Member, Module, ScopedName, SequenceType,
+        StringType, StructDcl, StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec,
+        TypeSpec, Typedef, TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl,
+        WStringType,
+    },
+};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until, take_while},
@@ -7,20 +18,12 @@ use nom::{
     },
     combinator::{eof, fail},
     error::{Error, VerboseError},
-    multi::{many0, many1},
+    multi::{many0, many1, separated_list1},
     sequence::{delimited, tuple},
     IResult,
 };
 use num_bigint::BigInt;
 use num_traits::Zero;
-
-use crate::{
-    character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
-    expr::{
-        BaseType, ConstExpr, ConstType, Definition, FixedPoint, Literal, Module, ScopedName,
-        StringType, UnaryOpExpr, WStringType,
-    },
-};
 
 type PResult<'a, OUT> = IResult<&'a str, OUT, VerboseError<&'a str>>;
 
@@ -54,6 +57,534 @@ fn parse_definition(input: &str) -> PResult<Definition> {
 }
 
 /// ```text
+/// (64) <type_declarator> ::= { <simple_type_spec> | <template_type_spec> | <constr_type_dcl> } <any_declarators>
+/// (65) <any_declalators> ::= <any_declarator> { "," <any_declarator> }*
+/// ```
+fn parse_type_declarator(input: &str) -> PResult<Typedef> {
+    fn simple(input: &str) -> PResult<TypedefType> {
+        let (input, t) = parse_simple_type_spec(input)?;
+        Ok((input, TypedefType::Simple(t)))
+    }
+
+    fn template(input: &str) -> PResult<TypedefType> {
+        let (input, t) = parse_template_type_spec(input)?;
+        Ok((input, TypedefType::Template(t)))
+    }
+
+    fn constr(input: &str) -> PResult<TypedefType> {
+        let (input, t) = parse_constr_type_dcl(input)?;
+        Ok((input, TypedefType::Constr(t)))
+    }
+
+    // <simple_type_spec> | <template_type_spec> | <constr_type_dcl>
+    let (input, type_dcl) = alt((simple, template, constr))(input)?;
+
+    let (input, _) = skip_space_and_comment1(input)?;
+
+    // <any_declalators>
+    let (input, declarators) = separated_list1(tag(","), parse_any_declarator)(input)?;
+
+    Ok((
+        input,
+        Typedef {
+            type_dcl,
+            declarators,
+        },
+    ))
+}
+
+/// ```text
+/// (66) <any_declarator> ::= <simple_declarator>
+///                         | <array_declarator>
+/// (59) <array_declarator> ::= <identifier> <fixed_array_size>+
+/// ```
+fn parse_any_declarator(input: &str) -> PResult<AnyDeclarator> {
+    let (input, id) = parse_id(input)?;
+
+    let (input, array_size) = many0(parse_fixed_array_size)(input)?;
+
+    if array_size.is_empty() {
+        Ok((input, AnyDeclarator::Simple(id)))
+    } else {
+        Ok((
+            input,
+            AnyDeclarator::Array(ArrayDeclarator { id, array_size }),
+        ))
+    }
+}
+
+/// ```text
+/// (60) <fixed_array_size> ::= "[" <positive_int_const> "]"
+/// ```
+fn parse_fixed_array_size(input: &str) -> PResult<ConstExpr> {
+    delimited(
+        tuple((skip_space_and_comment0, tag("["), skip_space_and_comment0)),
+        parse_const_expr,
+        tuple((skip_space_and_comment0, tag("]"))),
+    )(input)
+}
+
+/// ```text
+/// (38) <template_type_spec> ::= <sequence_type>
+///                             | <string_type>
+///                             | <wide_string_type>
+///                             | <fixed_pt_type>
+/// ```
+fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
+    fn sequence(input: &str) -> PResult<TemplateTypeSpec> {
+        let (input, t) = parse_sequence_type(input)?;
+        Ok((input, TemplateTypeSpec::Sequence(t)))
+    }
+
+    fn string(input: &str) -> PResult<TemplateTypeSpec> {
+        let (input, t) = parse_string_type(input)?;
+        Ok((input, TemplateTypeSpec::String(t)))
+    }
+
+    fn wide_string(input: &str) -> PResult<TemplateTypeSpec> {
+        let (input, t) = parse_wstring_type(input)?;
+        Ok((input, TemplateTypeSpec::WString(t)))
+    }
+
+    fn fixed_pt(input: &str) -> PResult<TemplateTypeSpec> {
+        let (input, t) = parse_fixed_pt_type(input)?;
+        Ok((input, TemplateTypeSpec::FixedPoint(t)))
+    }
+
+    alt((sequence, string, wide_string, fixed_pt))(input)
+}
+
+/// ```text
+/// <fixed_pt_type> ::= "fixed" "<" <positive_int_const> "," <positive_int_const> ">"
+/// ```
+fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
+    let (input, _) = tag("fixed")(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("<")(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, total_digits) = parse_const_expr(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag(",")(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, fractional_digits) = parse_const_expr(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag(">")(input)?;
+
+    Ok((
+        input,
+        FixedPtType {
+            total_digits,
+            fractional_digits,
+        },
+    ))
+}
+
+/// ```text
+/// <sequence_type> ::= "sequence" "<" <type_spec> "," <positive_int_const> ">"
+///                   | "sequence" "<" <type_spec> ">"
+/// ```
+fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
+    let (input, _) = tag("sequence")(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, type_spec) = parse_type_spec(input)?;
+
+    let (input, c) = alt((tag(","), tag(">")))(input)?;
+
+    match c {
+        "," => {
+            let (input, _) = skip_space_and_comment0(input)?;
+            let (input, expr) = parse_const_expr(input)?;
+
+            let (input, _) = skip_space_and_comment0(input)?;
+            let (input, _) = tag(">")(input)?;
+
+            Ok((input, SequenceType::Limited(type_spec, expr)))
+        }
+        ">" => {
+            let (input, _) = skip_space_and_comment0(input)?;
+            let (input, _) = tag(">")(input)?;
+
+            Ok((input, SequenceType::Unlimited(type_spec)))
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// ```text
+/// <constr_type_dcl> ::= <struct_dcl>
+///                     | <union_dcl>
+///                     | <enum_dcl>
+/// ```
+fn parse_constr_type_dcl(input: &str) -> PResult<ConstrTypeDcl> {
+    fn struct_type(input: &str) -> PResult<ConstrTypeDcl> {
+        let (input, t) = parse_struct_dcl(input)?;
+        Ok((input, ConstrTypeDcl::Struct(t)))
+    }
+
+    fn enum_type(input: &str) -> PResult<ConstrTypeDcl> {
+        let (input, t) = parse_enum_dcl(input)?;
+        Ok((input, ConstrTypeDcl::Enum(t)))
+    }
+
+    fn union_type(input: &str) -> PResult<ConstrTypeDcl> {
+        let (input, t) = parse_union_dcl(input)?;
+        Ok((input, ConstrTypeDcl::Union(t)))
+    }
+
+    alt((struct_type, enum_type, union_type))(input)
+}
+
+/// ```text
+/// <union_dcl> ::= <union_def>
+///               | <union_forward_dcl>
+/// ```
+fn parse_union_dcl(input: &str) -> PResult<UnionDcl> {
+    fn union_def(input: &str) -> PResult<UnionDcl> {
+        let (input, def) = parse_union_def(input)?;
+        Ok((input, UnionDcl::Def(def)))
+    }
+
+    fn forward_dcl(input: &str) -> PResult<UnionDcl> {
+        let (input, dcl) = parse_union_forward_dcl(input)?;
+        Ok((input, UnionDcl::ForwardDcl(dcl)))
+    }
+
+    alt((union_def, forward_dcl))(input)
+}
+
+/// ```text
+/// <union_forward_dcl> ::= "union" <identifier>
+/// ```
+fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
+    // "union"
+    let (input, _) = tag("union")(input)?;
+
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_id(input)?;
+
+    Ok((input, UnionForwardDcl(id)))
+}
+
+/// ```text
+/// <union_def> ::= "union" <identifier> "switch" "(" <switch_type_spec> ")" "{" <switch_body> "}"
+/// ```
+fn parse_union_def(input: &str) -> PResult<UnionDef> {
+    // "union"
+    let (input, _) = tag("union")(input)?;
+
+    // <identifier>
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_id(input)?;
+
+    // "switch"
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, _) = tag("switch")(input)?;
+
+    // "(" <switch_type_spec> ")"
+    let (input, switch_type_spec) = delimited(
+        tuple((skip_space_and_comment0, tag("("), skip_space_and_comment0)),
+        parse_switch_type_spec,
+        tuple((skip_space_and_comment0, tag(")"))),
+    )(input)?;
+
+    // "{" <switch_body> "}"
+    let (input, body) = delimited(
+        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
+        parse_switch_body,
+        tuple((skip_space_and_comment0, tag("}"))),
+    )(input)?;
+
+    Ok((
+        input,
+        UnionDef {
+            id,
+            switch_type_spec,
+            body,
+        },
+    ))
+}
+
+/// ```text
+/// <switch_type_spec> ::= <integer_type>
+///                      | <char_type>
+///                      | <boolean_type>
+///                      | <scoped_name>
+/// ```
+fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
+    fn integer_type(input: &str) -> PResult<SwitchTypeSpec> {
+        let (input, int_type) = parse_integer_type(input)?;
+        Ok((input, SwitchTypeSpec::Integer(int_type)))
+    }
+
+    fn char_type(input: &str) -> PResult<SwitchTypeSpec> {
+        let (input, _) = tag("char")(input)?;
+        Ok((input, SwitchTypeSpec::Char))
+    }
+
+    fn boolean_type(input: &str) -> PResult<SwitchTypeSpec> {
+        let (input, _) = tag("boolean")(input)?;
+        Ok((input, SwitchTypeSpec::Boolean))
+    }
+
+    fn scoped_name(input: &str) -> PResult<SwitchTypeSpec> {
+        let (input, name) = parse_scoped_name(input)?;
+        Ok((input, SwitchTypeSpec::ScopedName(name)))
+    }
+
+    alt((integer_type, char_type, boolean_type, scoped_name))(input)
+}
+
+/// ```text
+/// <switch_body> ::= <case>+
+/// ```
+fn parse_switch_body(input: &str) -> PResult<Vec<Case>> {
+    many1(parse_case)(input)
+}
+
+/// ```text
+/// <case> ::= <case_label>+ <element_spec> ";"
+/// ```
+fn parse_case(input: &str) -> PResult<Case> {
+    let (input, labels) = many1(parse_case_label)(input)?;
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, spec) = parse_element_spec(input)?;
+
+    Ok((input, Case { labels, spec }))
+}
+
+/// ```text
+/// <element_spec> ::= <type_spec> <declarator>
+/// ```
+fn parse_element_spec(input: &str) -> PResult<ElementSpec> {
+    let (input, type_spec) = parse_type_spec(input)?;
+
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_declarator(input)?;
+
+    Ok((input, ElementSpec { type_spec, id }))
+}
+
+/// ```text
+/// <case_label> ::= "case" <const_expr> ":"
+///                | "default" ":"
+/// ```
+fn parse_case_label(input: &str) -> PResult<CaseLabel> {
+    fn case(input: &str) -> PResult<CaseLabel> {
+        let (input, _) = tag("case")(input)?;
+        let (input, _) = skip_space_and_comment1(input)?;
+
+        let (input, expr) = parse_const_expr(input)?;
+
+        let (input, _) = skip_space_and_comment0(input)?;
+        let (input, _) = tag(":")(input)?;
+
+        Ok((input, CaseLabel::Case(expr)))
+    }
+
+    fn default(input: &str) -> PResult<CaseLabel> {
+        let (input, _) = tag("default")(input)?;
+        let (input, _) = skip_space_and_comment0(input)?;
+        let (input, _) = tag(":")(input)?;
+        Ok((input, CaseLabel::Default))
+    }
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    alt((case, default))(input)
+}
+
+/// ```text
+/// <const_dcl> ::= "const" <const_type> <identifier> "=" <const_expr>
+/// ```
+fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
+    // "const"
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("const")(input)?;
+
+    // <const_type>
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, const_type) = parse_const_type(input)?;
+
+    // <identifier>
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_id(input)?;
+
+    // "="
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("=")(input)?;
+
+    // <const_expr>
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, expr) = parse_const_expr(input)?;
+
+    Ok((
+        input,
+        ConstDcl {
+            const_type,
+            id,
+            expr,
+        },
+    ))
+}
+
+/// ```text
+/// <enum_dcl> ::= "enum" <identifier> "{" <enumerator> { "," <enumerator> }* "}"
+/// ```
+fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
+    // "enum"
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag("enum")(input)?;
+
+    // <identifier>
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_id(input)?;
+
+    // "{" <enumerator> { "," <enumerator> }* "}"
+    let (input, variants) = delimited(
+        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
+        separated_list1(
+            tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
+            parse_enumerator,
+        ),
+        tuple((skip_space_and_comment0, tag("}"))),
+    )(input)?;
+
+    Ok((input, EnumDcl { id, variants }))
+}
+
+/// ```text
+/// <enumerator> ::= <identifier>
+/// ```
+fn parse_enumerator(input: &str) -> PResult<String> {
+    parse_id(input)
+}
+
+/// ```text
+/// <struct_dcl> ::= <struct_def>
+///                | <struct_forward_dcl>
+/// ```
+fn parse_struct_dcl(input: &str) -> PResult<StructDcl> {
+    fn forward_dcl(input: &str) -> PResult<StructDcl> {
+        let (input, dcl) = parse_struct_forward_dcl(input)?;
+        Ok((input, StructDcl::ForwardDcl(dcl)))
+    }
+
+    fn struct_def(input: &str) -> PResult<StructDcl> {
+        let (input, def) = parse_struct_def(input)?;
+        Ok((input, StructDcl::Def(def)))
+    }
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    alt((struct_def, forward_dcl))(input)
+}
+
+/// ```text
+/// <struct_forward_dcl> ::= "struct" <identifier>
+/// ```
+fn parse_struct_forward_dcl(input: &str) -> PResult<StructForwardDcl> {
+    let (input, _) = tag("struct")(input)?;
+
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_id(input)?;
+
+    Ok((input, StructForwardDcl(id)))
+}
+
+/// ```text
+/// <struct_def> ::= "struct" <identifier> "{" <member>+ "}"
+/// ```
+fn parse_struct_def(input: &str) -> PResult<StructDef> {
+    // "struct"
+    let (input, _) = tag("struct")(input)?;
+
+    // <identifier>
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, id) = parse_id(input)?;
+
+    // "{" <member>+ "}"
+    let (input, members) = delimited(
+        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
+        many1(parse_member),
+        tuple((skip_space_and_comment0, tag("}"))),
+    )(input)?;
+
+    Ok((input, StructDef { id, members }))
+}
+
+/// ```text
+/// <member> ::= <type_spec> <declarators> ";"
+/// ```
+fn parse_member(input: &str) -> PResult<Member> {
+    // <type_spec>
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, type_spec) = parse_type_spec(input)?;
+
+    // <declarators>
+    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, ids) = parse_declarators(input)?;
+
+    // ";"
+    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tag(";")(input)?;
+
+    Ok((input, Member { type_spec, ids }))
+}
+
+/// ```text
+/// <type_spec> ::= <simple_type_spec>
+/// ```
+fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
+    parse_simple_type_spec(input)
+}
+
+/// ```text
+/// <simple_type_spec> ::= <base_type_spec> | <scoped_name>
+/// ```
+fn parse_simple_type_spec(input: &str) -> PResult<TypeSpec> {
+    fn scoped_name(input: &str) -> PResult<TypeSpec> {
+        let (input, name) = parse_scoped_name(input)?;
+        Ok((input, TypeSpec::ScopedName(name)))
+    }
+
+    fn base_type_spec(input: &str) -> PResult<TypeSpec> {
+        let (input, base_type) = parse_base_type_spec(input)?;
+        Ok((input, TypeSpec::BaseType(base_type)))
+    }
+
+    alt((scoped_name, base_type_spec))(input)
+}
+
+/// ```text
+/// <declarators> ::= <declarator> { "," <declarator> }*
+/// ```
+fn parse_declarators(input: &str) -> PResult<Vec<String>> {
+    separated_list1(
+        tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
+        parse_declarator,
+    )(input)
+}
+
+/// ```text
+/// <simple_declarator> ::= <identifier>
+/// ```
+fn parse_simple_declarator(input: &str) -> PResult<String> {
+    parse_id(input)
+}
+
+/// ```text
+/// <declarator> ::= <simple_declarator>
+/// ```
+fn parse_declarator(input: &str) -> PResult<String> {
+    parse_simple_declarator(input)
+}
+
+/// ```text
 /// <module_decl> ::= "module" <identifier> "{" <definition>+ "}"
 /// ```
 fn parse_module(input: &str) -> PResult<Module> {
@@ -64,14 +595,12 @@ fn parse_module(input: &str) -> PResult<Module> {
     // <identifier>
     let (input, id) = parse_id(input)?;
 
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag("{")(input)?;
-
-    // <definitions>+
-    let (input, definitions) = many1(parse_definition)(input)?;
-
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag("}")(input)?;
+    // "{" <definition>+ "}"
+    let (input, definitions) = delimited(
+        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
+        many1(parse_definition),
+        tuple((skip_space_and_comment0, tag("}"))),
+    )(input)?;
 
     Ok((input, Module { id, definitions }))
 }
@@ -146,6 +675,7 @@ fn parse_const_type(input: &str) -> PResult<ConstType> {
 
 /// ```text
 /// <const_expr> ::= <or_expr>
+/// <positive_int_const> ::= <const_expr>
 /// ```
 fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
     parse_or_expr(input)
@@ -385,9 +915,19 @@ fn parse_base_type_spec(input: &str) -> PResult<BaseType> {
         Ok((input, BaseType::Octet))
     }
 
+    fn integer_type(input: &str) -> PResult<BaseType> {
+        let (input, int_type) = parse_integer_type(input)?;
+        Ok((input, BaseType::Integer(int_type)))
+    }
+
+    fn floating_type(input: &str) -> PResult<BaseType> {
+        let (input, float_type) = parse_floating_pt_type(input)?;
+        Ok((input, BaseType::Float(float_type)))
+    }
+
     alt((
-        parse_integer_type,
-        parse_floating_pt_type,
+        integer_type,
+        floating_type,
         parse_char,
         parse_wchar,
         parse_boolean,
@@ -400,20 +940,20 @@ fn parse_base_type_spec(input: &str) -> PResult<BaseType> {
 ///                      | "double"
 ///                      | "long" "double"
 /// ```
-fn parse_floating_pt_type(input: &str) -> PResult<BaseType> {
-    fn parse_float(input: &str) -> PResult<BaseType> {
+fn parse_floating_pt_type(input: &str) -> PResult<FloatingPointType> {
+    fn parse_float(input: &str) -> PResult<FloatingPointType> {
         let (input, _) = tag("float")(input)?;
-        Ok((input, BaseType::Float))
+        Ok((input, FloatingPointType::Float))
     }
 
-    fn parse_double(input: &str) -> PResult<BaseType> {
+    fn parse_double(input: &str) -> PResult<FloatingPointType> {
         let (input, _) = tag("double")(input)?;
-        Ok((input, BaseType::Float))
+        Ok((input, FloatingPointType::Float))
     }
 
-    fn parse_long_double(input: &str) -> PResult<BaseType> {
+    fn parse_long_double(input: &str) -> PResult<FloatingPointType> {
         let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
-        Ok((input, BaseType::LongLong))
+        Ok((input, FloatingPointType::LongDouble))
     }
 
     alt((parse_float, parse_double, parse_long_double))(input)
@@ -439,28 +979,28 @@ fn parse_floating_pt_type(input: &str) -> PResult<BaseType> {
 /// <unsigned_long_int> ::= "unsigned" "long"
 /// <unsigned_longlong_int> ::= "unsigned" "long" "long"
 /// ```
-fn parse_integer_type(input: &str) -> PResult<BaseType> {
-    fn short(input: &str) -> PResult<BaseType> {
+fn parse_integer_type(input: &str) -> PResult<IntegerType> {
+    fn short(input: &str) -> PResult<IntegerType> {
         let (input, _) = tag("short")(input)?;
-        Ok((input, BaseType::Short))
+        Ok((input, IntegerType::Short))
     }
 
-    fn long_long(input: &str) -> PResult<BaseType> {
+    fn long_long(input: &str) -> PResult<IntegerType> {
         let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
-        Ok((input, BaseType::LongLong))
+        Ok((input, IntegerType::LongLong))
     }
 
-    fn long(input: &str) -> PResult<BaseType> {
+    fn long(input: &str) -> PResult<IntegerType> {
         let (input, _) = tag("long")(input)?;
-        Ok((input, BaseType::Long))
+        Ok((input, IntegerType::Long))
     }
 
-    fn unsigned_short(input: &str) -> PResult<BaseType> {
+    fn unsigned_short(input: &str) -> PResult<IntegerType> {
         let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
-        Ok((input, BaseType::UnsignedLong))
+        Ok((input, IntegerType::UnsignedLong))
     }
 
-    fn unsigned_long_long(input: &str) -> PResult<BaseType> {
+    fn unsigned_long_long(input: &str) -> PResult<IntegerType> {
         let (input, _) = tuple((
             tag("unsigned"),
             skip_space_and_comment1,
@@ -468,12 +1008,12 @@ fn parse_integer_type(input: &str) -> PResult<BaseType> {
             skip_space_and_comment1,
             tag("long"),
         ))(input)?;
-        Ok((input, BaseType::UnsignedLongLong))
+        Ok((input, IntegerType::UnsignedLongLong))
     }
 
-    fn unsigned_long(input: &str) -> PResult<BaseType> {
+    fn unsigned_long(input: &str) -> PResult<IntegerType> {
         let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
-        Ok((input, BaseType::UnsignedLong))
+        Ok((input, IntegerType::UnsignedLong))
     }
 
     alt((
