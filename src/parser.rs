@@ -1,12 +1,11 @@
 use crate::{
     character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
     expr::{
-        AnyDeclarator, ArrayDeclarator, BaseType, Case, CaseLabel, ConstDcl, ConstExpr, ConstType,
-        ConstrTypeDcl, Definition, ElementSpec, EnumDcl, FixedPoint, FixedPtType,
-        FloatingPointType, IntegerType, Literal, Member, Module, NativeDcl, ScopedName,
-        SequenceType, StringType, StructDcl, StructDef, StructForwardDcl, SwitchTypeSpec,
-        TemplateTypeSpec, TypeDcl, TypeSpec, Typedef, TypedefType, UnaryOpExpr, UnionDcl, UnionDef,
-        UnionForwardDcl, WStringType,
+        AnyDeclarator, ArrayDeclarator, Case, CaseLabel, ConstDcl, ConstExpr, ConstType,
+        ConstrTypeDcl, Definition, ElementSpec, EnumDcl, FixedPoint, FixedPtType, Literal, Member,
+        Module, NativeDcl, PrimitiveType, ScopedName, SequenceType, StringType, StructDcl,
+        StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec, TypeDcl, TypeSpec, Typedef,
+        TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
     },
 };
 use nom::{
@@ -27,8 +26,8 @@ use num_traits::Zero;
 
 type PResult<'a, OUT> = IResult<&'a str, OUT, VerboseError<&'a str>>;
 
-pub fn parse(input: &str) -> PResult<Literal> {
-    parse_literal(input)
+pub fn parse(input: &str) -> PResult<Definition> {
+    parse_definition(input)
 }
 
 fn parse_comment(input: &str) -> PResult<&str> {
@@ -87,12 +86,51 @@ fn parse_id(input: &str) -> PResult<String> {
 }
 
 /// ```text
-/// (2) <definition> ::= <module_dcl> ";"
-///                    | <const_dcl> ";"
-///                    | <type_dcl> ";"
+/// (  2) <definition> ::= <module_dcl> ";"
+///                      | <const_dcl> ";"
+///                      | <type_dcl> ";"
+///
+/// ( 71) <definition> ::+ <except_dcl> ";"
+///                      | <interface_dcl> ";"
+///
+/// ( 98) <definition> ::+ <value_dcl> ";"
+///
+/// (111) <definition> ::+ <type_id_dcl> ";"
+///                      | <type_prefix_dcl> ";"
+///                      | <import_dcl> ";"
+///
+/// (133) <definition> ::+ <component_dcl> ";"
+///
+/// (144) <definition> ::+ <home_dcl> ";"
+///
+/// (153) <definition> ::+ <event_dcl> ";"
+///
+/// (171) <definition> ::+ <porttype_dcl> ";"
+///                      | <connector_dcl> ";"
+///
+/// (184) <definition> ::+ <template_module_dcl> ";"
+///                      | <template_module_inst> ";"
 /// ```
 fn parse_definition(input: &str) -> PResult<Definition> {
-    todo!()
+    fn module(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_module_dcl(input)?;
+        Ok((input, Definition::Module(def)))
+    }
+
+    fn const_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_const_dcl(input)?;
+        Ok((input, Definition::Const(def)))
+    }
+
+    fn type_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_type_dcl(input)?;
+        Ok((input, Definition::Type(def)))
+    }
+
+    let (input, def) = alt((module, const_dcl, type_dcl))(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+
+    Ok((input, def))
 }
 
 /// ```text
@@ -139,8 +177,7 @@ fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
 /// ```
 fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
     // "const"
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag("const")(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag("const")))(input)?;
 
     // <const_type>
     let (input, _) = skip_space_and_comment1(input)?;
@@ -151,8 +188,7 @@ fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
     let (input, id) = parse_id(input)?;
 
     // "="
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag("=")(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag("=")))(input)?;
 
     // <const_expr>
     let (input, _) = skip_space_and_comment0(input)?;
@@ -181,33 +217,34 @@ fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
 ///                    | <scoped_name>
 /// ```
 fn parse_const_type(input: &str) -> PResult<ConstType> {
-    fn base_type(input: &str) -> PResult<ConstType> {
-        let (input, t) = parse_base_type_spec(input)?;
-        Ok((input, ConstType::BaseType(t)))
+    if let Ok((input, result)) = alt((parse_int_words, parse_long_double))(input) {
+        return Ok((input, ConstType::PrimitiveType(result)));
     }
 
-    fn string_type(input: &str) -> PResult<ConstType> {
-        let (input, t) = parse_string_type(input)?;
-        Ok((input, ConstType::StringType(t)))
+    if let Ok((input, result)) = parse_string_type(input) {
+        return Ok((input, ConstType::StringType(result)));
     }
 
-    fn wstring_type(input: &str) -> PResult<ConstType> {
-        let (input, t) = parse_wstring_type(input)?;
-        Ok((input, ConstType::WStringType(t)))
+    if let Ok((input, result)) = parse_wide_string_type(input) {
+        return Ok((input, ConstType::WStringType(result)));
     }
 
-    fn scoped_name(input: &str) -> PResult<ConstType> {
-        let (input, t) = parse_scoped_name(input)?;
-        Ok((input, ConstType::ScopedName(t)))
+    let (input, name) = parse_scoped_name(input)?;
+
+    if let Some(p) = name.to_primitive() {
+        return Ok((input, ConstType::PrimitiveType(p)));
     }
 
-    alt((
-        base_type,
-        string_type,
-        wstring_type,
-        parse_fixed_pt_const_type,
-        scoped_name,
-    ))(input)
+    if name.ids.len() >= 2 {
+        return Ok((input, ConstType::ScopedName(name)));
+    }
+
+    match name.ids[0].as_str() {
+        "string" => Ok((input, ConstType::StringType(StringType::UnlimitedSize))),
+        "wstring" => Ok((input, ConstType::WStringType(WStringType::UnlimitedSize))),
+        "fixed" => Ok((input, ConstType::FixedPointConst)),
+        _ => Ok((input, ConstType::ScopedName(name))),
+    }
 }
 
 /// ```text
@@ -679,138 +716,41 @@ fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
 /// (22) <simple_type_spec> ::= <base_type_spec> | <scoped_name>
 /// ```
 fn parse_simple_type_spec(input: &str) -> PResult<TypeSpec> {
-    fn scoped_name(input: &str) -> PResult<TypeSpec> {
-        let (input, name) = parse_scoped_name(input)?;
+    if let Ok((input, result)) = alt((parse_int_words, parse_long_double))(input) {
+        return Ok((input, TypeSpec::PrimitiveType(result)));
+    }
+
+    let (input, name) = parse_scoped_name(input)?;
+
+    if let Some(p) = name.to_primitive() {
+        Ok((input, TypeSpec::PrimitiveType(p)))
+    } else {
         Ok((input, TypeSpec::ScopedName(name)))
     }
-
-    fn base_type_spec(input: &str) -> PResult<TypeSpec> {
-        let (input, base_type) = parse_base_type_spec(input)?;
-        Ok((input, TypeSpec::BaseType(base_type)))
-    }
-
-    alt((scoped_name, base_type_spec))(input)
-}
-/// ```text
-/// (23) <base_type_spec> ::= <integer_type>
-///                         | <floating_pt_type>
-///                         | <char_type>
-///                         | <wide_char_type>
-///                         | <boolean_type>
-///                         | <octet_type>
-///
-/// (34) <char_type> ::= "char"
-/// (35) <wide_char_type> ::= "wchar"
-/// (36) <boolean_type> ::= "boolean"
-/// (37) <octet_type> ::= "octet"
-/// ```
-fn parse_base_type_spec(input: &str) -> PResult<BaseType> {
-    fn parse_char(input: &str) -> PResult<BaseType> {
-        let (input, _) = tag("char")(input)?;
-        Ok((input, BaseType::Char))
-    }
-
-    fn parse_wchar(input: &str) -> PResult<BaseType> {
-        let (input, _) = tag("wchar")(input)?;
-        Ok((input, BaseType::WChar))
-    }
-
-    fn parse_boolean(input: &str) -> PResult<BaseType> {
-        let (input, _) = tag("boolean")(input)?;
-        Ok((input, BaseType::Boolean))
-    }
-
-    fn parse_octet(input: &str) -> PResult<BaseType> {
-        let (input, _) = tag("octet")(input)?;
-        Ok((input, BaseType::Octet))
-    }
-
-    fn integer_type(input: &str) -> PResult<BaseType> {
-        let (input, int_type) = parse_integer_type(input)?;
-        Ok((input, BaseType::Integer(int_type)))
-    }
-
-    fn floating_type(input: &str) -> PResult<BaseType> {
-        let (input, float_type) = parse_floating_pt_type(input)?;
-        Ok((input, BaseType::Float(float_type)))
-    }
-
-    alt((
-        integer_type,
-        floating_type,
-        parse_char,
-        parse_wchar,
-        parse_boolean,
-        parse_octet,
-    ))(input)
 }
 
-/// ```text
-/// (24) <floating_pt_type> ::= "float"
-///                           | "double"
-///                           | "long" "double"
-/// ```
-fn parse_floating_pt_type(input: &str) -> PResult<FloatingPointType> {
-    fn parse_float(input: &str) -> PResult<FloatingPointType> {
-        let (input, _) = tag("float")(input)?;
-        Ok((input, FloatingPointType::Float))
-    }
+// ```text
+// (23) <base_type_spec> ::= <integer_type>
+//                         | <floating_pt_type>
+//                         | <char_type>
+//                         | <wide_char_type>
+//                         | <boolean_type>
+//                         | <octet_type>
+// ```
 
-    fn parse_double(input: &str) -> PResult<FloatingPointType> {
-        let (input, _) = tag("double")(input)?;
-        Ok((input, FloatingPointType::Float))
-    }
-
-    fn parse_long_double(input: &str) -> PResult<FloatingPointType> {
-        let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
-        Ok((input, FloatingPointType::LongDouble))
-    }
-
-    alt((parse_float, parse_double, parse_long_double))(input)
-}
-
-/// ```text
-/// (25) <integer_type> ::= <signed_int>
-///                       | <unsigned_int>
-///
-/// (26) <signed_int> ::= <signed_short_int>
-///                     | <signed_long_int>
-///                     | <signed_longlong_int>
-///
-/// (27) <signed_short_int> ::= "short"
-/// (28) <signed_long_int> ::= "long"
-/// (29) <signed_longlong_int> ::= "long" "long"
-///
-/// (30) <unsigned_int> ::= <unsigned_short_int>
-///                       | <unsigned_long_int>
-///                       | <unsigned_longlong_int>
-///
-/// (31) <unsigned_short_int> ::= "unsigned" "short"
-/// (32) <unsigned_long_int> ::= "unsigned" "long"
-/// (33) <unsigned_longlong_int> ::= "unsigned" "long" "long"
-/// ```
-fn parse_integer_type(input: &str) -> PResult<IntegerType> {
-    fn short(input: &str) -> PResult<IntegerType> {
-        let (input, _) = tag("short")(input)?;
-        Ok((input, IntegerType::Short))
-    }
-
-    fn long_long(input: &str) -> PResult<IntegerType> {
+/// Parse integer types consisting more than or equal to 2 words.
+fn parse_int_words(input: &str) -> PResult<PrimitiveType> {
+    fn long_long(input: &str) -> PResult<PrimitiveType> {
         let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
-        Ok((input, IntegerType::LongLong))
+        Ok((input, PrimitiveType::LongLong))
     }
 
-    fn long(input: &str) -> PResult<IntegerType> {
-        let (input, _) = tag("long")(input)?;
-        Ok((input, IntegerType::Long))
+    fn unsigned_short(input: &str) -> PResult<PrimitiveType> {
+        let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("short")))(input)?;
+        Ok((input, PrimitiveType::UnsignedLong))
     }
 
-    fn unsigned_short(input: &str) -> PResult<IntegerType> {
-        let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
-        Ok((input, IntegerType::UnsignedLong))
-    }
-
-    fn unsigned_long_long(input: &str) -> PResult<IntegerType> {
+    fn unsigned_long_long(input: &str) -> PResult<PrimitiveType> {
         let (input, _) = tuple((
             tag("unsigned"),
             skip_space_and_comment1,
@@ -818,23 +758,51 @@ fn parse_integer_type(input: &str) -> PResult<IntegerType> {
             skip_space_and_comment1,
             tag("long"),
         ))(input)?;
-        Ok((input, IntegerType::UnsignedLongLong))
+        Ok((input, PrimitiveType::UnsignedLongLong))
     }
 
-    fn unsigned_long(input: &str) -> PResult<IntegerType> {
+    fn unsigned_long(input: &str) -> PResult<PrimitiveType> {
         let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
-        Ok((input, IntegerType::UnsignedLong))
+        Ok((input, PrimitiveType::UnsignedLong))
     }
 
-    alt((
-        short,
-        long_long,
-        long,
-        unsigned_short,
-        unsigned_long_long,
-        unsigned_long,
-    ))(input)
+    alt((long_long, unsigned_short, unsigned_long_long, unsigned_long))(input)
 }
+
+fn parse_long_double(input: &str) -> PResult<PrimitiveType> {
+    let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
+    Ok((input, PrimitiveType::LongDouble))
+}
+
+// ```text
+// (24) <floating_pt_type> ::= "float"
+//                           | "double"
+//                           | "long" "double"
+//
+// (25) <integer_type> ::= <signed_int>
+//                       | <unsigned_int>
+//
+// (26) <signed_int> ::= <signed_short_int>
+//                     | <signed_long_int>
+//                     | <signed_longlong_int>
+//
+// (27) <signed_short_int> ::= "short"
+// (28) <signed_long_int> ::= "long"
+// (29) <signed_longlong_int> ::= "long" "long"
+//
+// (30) <unsigned_int> ::= <unsigned_short_int>
+//                       | <unsigned_long_int>
+//                       | <unsigned_longlong_int>
+//
+// (31) <unsigned_short_int> ::= "unsigned" "short"
+// (32) <unsigned_long_int> ::= "unsigned" "long"
+// (33) <unsigned_longlong_int> ::= "unsigned" "long" "long"
+//
+// (34) <char_type> ::= "char"
+// (35) <wide_char_type> ::= "wchar"
+// (36) <boolean_type> ::= "boolean"
+// (37) <octet_type> ::= "octet"
+// ```
 
 /// ```text
 /// (38) <template_type_spec> ::= <sequence_type>
@@ -854,7 +822,7 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
     }
 
     fn wide_string(input: &str) -> PResult<TemplateTypeSpec> {
-        let (input, t) = parse_wstring_type(input)?;
+        let (input, t) = parse_wide_string_type(input)?;
         Ok((input, TemplateTypeSpec::WString(t)))
     }
 
@@ -913,48 +881,44 @@ fn parse_max_size(input: &str) -> PResult<ConstExpr> {
 /// (40) <string_type> ::= "string" "<" <positive_int_const> ">"
 ///                      | "string"
 /// ```
+///
+/// This function parses only `"string" "<" <positive_int_const> ">"`.
 fn parse_string_type(input: &str) -> PResult<StringType> {
     let (input, _) = tag("string")(input)?;
-    if let Ok((input, size)) = parse_max_size(input) {
-        Ok((input, StringType::Sized(size)))
-    } else {
-        Ok((input, StringType::UnlimitedSize))
-    }
+    let (input, size) = parse_max_size(input)?;
+    Ok((input, StringType::Sized(size)))
 }
 
 /// ```text
-/// (41) <wstring_type> ::= "wstring" "<" <positive_int_const> ">"
-///                       | "wstring"
+/// (41) <wide_string_type> ::= "wstring" "<" <positive_int_const> ">"
+///                           | "wstring"
 /// ```
-fn parse_wstring_type(input: &str) -> PResult<WStringType> {
+///
+/// This function parses only `"string" "<" <positive_int_const> ">"`.
+fn parse_wide_string_type(input: &str) -> PResult<WStringType> {
     let (input, _) = tag("wstring")(input)?;
-    if let Ok((input, size)) = parse_max_size(input) {
-        Ok((input, WStringType::Sized(size)))
-    } else {
-        Ok((input, WStringType::UnlimitedSize))
-    }
+    let (input, size) = parse_max_size(input)?;
+    Ok((input, WStringType::Sized(size)))
 }
 
 /// ```text
 /// (42) <fixed_pt_type> ::= "fixed" "<" <positive_int_const> "," <positive_int_const> ">"
 /// ```
 fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
-    let (input, _) = tag("fixed")(input)?;
+    let (input, _) = tuple((
+        tag("fixed"),
+        skip_space_and_comment0,
+        tag("<"),
+        skip_space_and_comment0,
+    ))(input)?;
 
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag("<")(input)?;
-
-    let (input, _) = skip_space_and_comment0(input)?;
     let (input, total_digits) = parse_const_expr(input)?;
 
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag(",")(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0))(input)?;
 
-    let (input, _) = skip_space_and_comment0(input)?;
     let (input, fractional_digits) = parse_const_expr(input)?;
 
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag(">")(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag(">")))(input)?;
 
     Ok((
         input,
@@ -965,13 +929,9 @@ fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
     ))
 }
 
-/// ```text
-/// (43) <fixed_pt_const_type> ::= "fixed"
-/// ```
-fn parse_fixed_pt_const_type(input: &str) -> PResult<ConstType> {
-    let (input, _) = tag("fixed")(input)?;
-    Ok((input, ConstType::FixedPointConst))
-}
+// ```text
+// (43) <fixed_pt_const_type> ::= "fixed"
+// ```
 
 /// ```text
 /// (44) <constr_type_dcl> ::= <struct_dcl>
@@ -1021,10 +981,9 @@ fn parse_struct_dcl(input: &str) -> PResult<StructDcl> {
 /// ```
 fn parse_struct_def(input: &str) -> PResult<StructDef> {
     // "struct"
-    let (input, _) = tag("struct")(input)?;
+    let (input, _) = tuple((tag("struct"), skip_space_and_comment1))(input)?;
 
     // <identifier>
-    let (input, _) = skip_space_and_comment1(input)?;
     let (input, id) = parse_id(input)?;
 
     // "{" <member>+ "}"
@@ -1050,8 +1009,7 @@ fn parse_member(input: &str) -> PResult<Member> {
     let (input, ids) = parse_declarators(input)?;
 
     // ";"
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag(";")(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, Member { type_spec, ids }))
 }
@@ -1060,9 +1018,7 @@ fn parse_member(input: &str) -> PResult<Member> {
 /// (48) <struct_forward_dcl> ::= "struct" <identifier>
 /// ```
 fn parse_struct_forward_dcl(input: &str) -> PResult<StructForwardDcl> {
-    let (input, _) = tag("struct")(input)?;
-
-    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, _) = tuple((tag("struct"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     Ok((input, StructForwardDcl(id)))
@@ -1091,15 +1047,13 @@ fn parse_union_dcl(input: &str) -> PResult<UnionDcl> {
 /// ```
 fn parse_union_def(input: &str) -> PResult<UnionDef> {
     // "union"
-    let (input, _) = tag("union")(input)?;
+    let (input, _) = tuple((tag("union"), skip_space_and_comment1))(input)?;
 
     // <identifier>
-    let (input, _) = skip_space_and_comment1(input)?;
     let (input, id) = parse_id(input)?;
 
     // "switch"
-    let (input, _) = skip_space_and_comment1(input)?;
-    let (input, _) = tag("switch")(input)?;
+    let (input, _) = tuple((skip_space_and_comment1, tag("switch")))(input)?;
 
     // "(" <switch_type_spec> ")"
     let (input, switch_type_spec) = delimited(
@@ -1132,27 +1086,23 @@ fn parse_union_def(input: &str) -> PResult<UnionDef> {
 ///                           | <scoped_name>
 /// ```
 fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
-    fn integer_type(input: &str) -> PResult<SwitchTypeSpec> {
-        let (input, int_type) = parse_integer_type(input)?;
-        Ok((input, SwitchTypeSpec::Integer(int_type)))
+    if let Ok((input, result)) = parse_int_words(input) {
+        return Ok((input, SwitchTypeSpec::PrimitiveType(result)));
     }
 
-    fn char_type(input: &str) -> PResult<SwitchTypeSpec> {
-        let (input, _) = tag("char")(input)?;
-        Ok((input, SwitchTypeSpec::Char))
+    let (input, name) = parse_scoped_name(input)?;
+
+    if name.ids.len() >= 2 {
+        return Ok((input, SwitchTypeSpec::ScopedName(name)));
     }
 
-    fn boolean_type(input: &str) -> PResult<SwitchTypeSpec> {
-        let (input, _) = tag("boolean")(input)?;
-        Ok((input, SwitchTypeSpec::Boolean))
+    match name.ids[0].as_str() {
+        "short" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Short))),
+        "long" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Long))),
+        "char" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Char))),
+        "boolean" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Boolean))),
+        _ => Ok((input, SwitchTypeSpec::ScopedName(name))),
     }
-
-    fn scoped_name(input: &str) -> PResult<SwitchTypeSpec> {
-        let (input, name) = parse_scoped_name(input)?;
-        Ok((input, SwitchTypeSpec::ScopedName(name)))
-    }
-
-    alt((integer_type, char_type, boolean_type, scoped_name))(input)
 }
 
 /// ```text
@@ -1180,21 +1130,17 @@ fn parse_case(input: &str) -> PResult<Case> {
 /// ```
 fn parse_case_label(input: &str) -> PResult<CaseLabel> {
     fn case(input: &str) -> PResult<CaseLabel> {
-        let (input, _) = tag("case")(input)?;
-        let (input, _) = skip_space_and_comment1(input)?;
+        let (input, _) = tuple((tag("case"), skip_space_and_comment1))(input)?;
 
         let (input, expr) = parse_const_expr(input)?;
 
-        let (input, _) = skip_space_and_comment0(input)?;
-        let (input, _) = tag(":")(input)?;
+        let (input, _) = tuple((skip_space_and_comment0, tag(":")))(input)?;
 
         Ok((input, CaseLabel::Case(expr)))
     }
 
     fn default(input: &str) -> PResult<CaseLabel> {
-        let (input, _) = tag("default")(input)?;
-        let (input, _) = skip_space_and_comment0(input)?;
-        let (input, _) = tag(":")(input)?;
+        let (input, _) = tuple((tag("default"), skip_space_and_comment0, tag(":")))(input)?;
         Ok((input, CaseLabel::Default))
     }
 
@@ -1219,9 +1165,7 @@ fn parse_element_spec(input: &str) -> PResult<ElementSpec> {
 /// ```
 fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
     // "union"
-    let (input, _) = tag("union")(input)?;
-
-    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, _) = tuple((tag("union"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     Ok((input, UnionForwardDcl(id)))
@@ -1232,11 +1176,13 @@ fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
 /// ```
 fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
     // "enum"
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, _) = tag("enum")(input)?;
+    let (input, _) = tuple((
+        skip_space_and_comment0,
+        tag("enum"),
+        skip_space_and_comment1,
+    ))(input)?;
 
     // <identifier>
-    let (input, _) = skip_space_and_comment1(input)?;
     let (input, id) = parse_id(input)?;
 
     // "{" <enumerator> { "," <enumerator> }* "}"
@@ -1274,9 +1220,7 @@ fn parse_fixed_array_size(input: &str) -> PResult<ConstExpr> {
 /// (61) <native_dcl> ::= "native" <simple_declarator>
 /// ```
 fn parse_native_dcl(input: &str) -> PResult<NativeDcl> {
-    let (input, _) = tag("native")(input)?;
-
-    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, _) = tuple((tag("native"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_simple_declarator(input)?;
 
     Ok((input, NativeDcl(id)))
@@ -1293,8 +1237,7 @@ fn parse_simple_declarator(input: &str) -> PResult<String> {
 /// (63) <typedef_dcl> ::= "typedef" <type_declarator>
 /// ```
 fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
-    let (input, _) = tag("typedef")(input)?;
-    let (input, _) = skip_space_and_comment1(input)?;
+    let (input, _) = tuple((tag("typedef"), skip_space_and_comment1))(input)?;
     parse_type_declarator(input)
 }
 

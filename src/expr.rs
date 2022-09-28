@@ -15,6 +15,8 @@ pub struct Const {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Definition {
     Module(Module),
+    Const(ConstDcl),
+    Type(TypeDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -23,29 +25,19 @@ pub struct ScopedName {
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub enum IntegerType {
+pub enum PrimitiveType {
     Short,            // signed 2^16
     Long,             // signed 2^32
     LongLong,         // signed 2^64
     UnsignedShort,    // unsigned 2^16
     UnsignedLong,     // unsigned 2^32
     UnsignedLongLong, // unsigned 2^64
-}
-
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub enum FloatingPointType {
-    Float,      // 32-bit floating point number
-    Double,     // 64-bit floating point number
-    LongDouble, // 128 bits floating point number
-}
-
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub enum BaseType {
-    Char,    // 8-bit character
-    WChar,   // implementation dependent wide character
-    Boolean, // boolean
-    Float(FloatingPointType),
-    Integer(IntegerType),
+    Float,            // 32-bit floating point number
+    Double,           // 64-bit floating point number
+    LongDouble,       // 128 bits floating point number
+    Char,             // 8-bit character
+    WChar,            // implementation dependent wide character
+    Boolean,          // boolean
 
     // an opaque 8-bit quantity that is guaranteed not to undergo any change by the middleware
     Octet,
@@ -89,7 +81,7 @@ pub enum WStringType {
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum ConstType {
-    BaseType(BaseType),
+    PrimitiveType(PrimitiveType),
     ScopedName(ScopedName),
     StringType(StringType),
     WStringType(WStringType),
@@ -126,7 +118,7 @@ pub struct StructForwardDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum TypeSpec {
-    BaseType(BaseType),
+    PrimitiveType(PrimitiveType),
     ScopedName(ScopedName),
 }
 
@@ -174,9 +166,7 @@ pub struct ElementSpec {
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum SwitchTypeSpec {
-    Integer(IntegerType),
-    Char,    // 8-bit character
-    Boolean, // boolean
+    PrimitiveType(PrimitiveType),
     ScopedName(ScopedName),
 }
 
@@ -256,4 +246,24 @@ pub enum AnyDeclarator {
 pub struct ArrayDeclarator {
     pub id: String,
     pub array_size: Vec<ConstExpr>,
+}
+
+impl ScopedName {
+    pub fn to_primitive(&self) -> Option<PrimitiveType> {
+        if self.ids.len() == 1 {
+            match self.ids[0].as_str() {
+                "char" => Some(PrimitiveType::Char),
+                "wchar" => Some(PrimitiveType::WChar),
+                "boolean" => Some(PrimitiveType::Boolean),
+                "octet" => Some(PrimitiveType::Octet),
+                "short" => Some(PrimitiveType::Short),
+                "long" => Some(PrimitiveType::Long),
+                "double" => Some(PrimitiveType::Double),
+                "float" => Some(PrimitiveType::Float),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
 }
