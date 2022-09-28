@@ -24,6 +24,27 @@ pub struct ScopedName {
     pub ids: Vec<String>,
 }
 
+impl ScopedName {
+    pub fn to_primitive(&self) -> Option<PrimitiveType> {
+        if self.ids.len() == 1 {
+            match self.ids[0].as_str() {
+                "char" => Some(PrimitiveType::Char),
+                "wchar" => Some(PrimitiveType::WChar),
+                "boolean" => Some(PrimitiveType::Boolean),
+                "octet" => Some(PrimitiveType::Octet),
+                "short" => Some(PrimitiveType::Short),
+                "long" => Some(PrimitiveType::Long),
+                "double" => Some(PrimitiveType::Double),
+                "float" => Some(PrimitiveType::Float),
+                "any" => Some(PrimitiveType::Any),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum PrimitiveType {
     Short,            // signed 2^16
@@ -38,6 +59,7 @@ pub enum PrimitiveType {
     Char,             // 8-bit character
     WChar,            // implementation dependent wide character
     Boolean,          // boolean
+    Any,              // any type
 
     // an opaque 8-bit quantity that is guaranteed not to undergo any change by the middleware
     Octet,
@@ -248,22 +270,8 @@ pub struct ArrayDeclarator {
     pub array_size: Vec<ConstExpr>,
 }
 
-impl ScopedName {
-    pub fn to_primitive(&self) -> Option<PrimitiveType> {
-        if self.ids.len() == 1 {
-            match self.ids[0].as_str() {
-                "char" => Some(PrimitiveType::Char),
-                "wchar" => Some(PrimitiveType::WChar),
-                "boolean" => Some(PrimitiveType::Boolean),
-                "octet" => Some(PrimitiveType::Octet),
-                "short" => Some(PrimitiveType::Short),
-                "long" => Some(PrimitiveType::Long),
-                "double" => Some(PrimitiveType::Double),
-                "float" => Some(PrimitiveType::Float),
-                _ => None,
-            }
-        } else {
-            None
-        }
-    }
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ExceptDcl {
+    pub id: String,
+    pub members: Vec<Member>,
 }

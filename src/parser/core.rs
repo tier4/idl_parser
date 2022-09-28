@@ -730,6 +730,9 @@ fn parse_simple_type_spec(input: &str) -> PResult<TypeSpec> {
 //                         | <wide_char_type>
 //                         | <boolean_type>
 //                         | <octet_type>
+//
+// (69) <base_type_spec> ::+ <any_type>
+// (70) <any_type> ::= "any"
 // ```
 
 /// Parse integer types consisting more than or equal to 2 words.
@@ -993,7 +996,7 @@ fn parse_struct_def(input: &str) -> PResult<StructDef> {
 /// ```text
 /// (47) <member> ::= <type_spec> <declarators> ";"
 /// ```
-fn parse_member(input: &str) -> PResult<Member> {
+pub fn parse_member(input: &str) -> PResult<Member> {
     // <type_spec>
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
