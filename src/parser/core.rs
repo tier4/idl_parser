@@ -8,6 +8,7 @@ use crate::{
         StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec, TypeDcl, TypeSpec, Typedef,
         TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
     },
+    parser::interfaces::{parse_except_dcl, parse_interface_dcl},
 };
 use nom::{
     branch::alt,
@@ -121,7 +122,17 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Type(def)))
     }
 
-    let (input, def) = alt((module, const_dcl, type_dcl))(input)?;
+    fn except_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_except_dcl(input)?;
+        Ok((input, Definition::Except(def)))
+    }
+
+    fn interface_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_interface_dcl(input)?;
+        Ok((input, Definition::Interface(def)))
+    }
+
+    let (input, def) = alt((module, const_dcl, type_dcl, except_dcl, interface_dcl))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, def))
@@ -152,7 +163,7 @@ fn parse_module_dcl(input: &str) -> PResult<Module> {
 ///                     | "::" <identifier>
 ///                     | <scoped_name> "::" <identifier>
 /// ```
-fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
+pub fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
     let mut ids = Vec::new();
     loop {
         let (next, id) = parse_id(input)?;
@@ -702,7 +713,7 @@ fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
 /// ```text
 /// (21) <type_spec> ::= <simple_type_spec>
 /// ```
-fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
+pub fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
     parse_simple_type_spec(input)
 }
 
@@ -1226,7 +1237,7 @@ fn parse_native_dcl(input: &str) -> PResult<NativeDcl> {
 /// ```text
 /// (62) <simple_declarator> ::= <identifier>
 /// ```
-fn parse_simple_declarator(input: &str) -> PResult<String> {
+pub fn parse_simple_declarator(input: &str) -> PResult<String> {
     parse_id(input)
 }
 

@@ -17,6 +17,8 @@ pub enum Definition {
     Module(Module),
     Const(ConstDcl),
     Type(TypeDcl),
+    Except(ExceptDcl),
+    Interface(InterfaceDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -274,4 +276,104 @@ pub struct ArrayDeclarator {
 pub struct ExceptDcl {
     pub id: String,
     pub members: Vec<Member>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct InterfaceHeader {
+    pub id: String,
+    pub parents: Vec<ScopedName>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct InterfaceForwardDcl(pub String);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum OpTypeSpec {
+    TypeSpec(TypeSpec),
+    Void,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ParamAttribute {
+    In,
+    Out,
+    InOut,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ParamDcl {
+    pub attr: ParamAttribute,
+    pub type_spec: TypeSpec,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct Raises(pub Vec<ScopedName>);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct OpDcl {
+    pub id: String,
+    pub type_spec: OpTypeSpec,
+    pub params: Vec<ParamDcl>,
+    pub raises: Option<Raises>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ReadonlyAttrDeclarator {
+    WithRaises(String, Raises),
+    IDs(Vec<String>),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ReadonlyAttrSpec {
+    pub type_spec: TypeSpec,
+    pub declarator: ReadonlyAttrDeclarator,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct SetExcep(pub Vec<ScopedName>);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct GetExcep(pub Vec<ScopedName>);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum AttrRaises {
+    GetExcep(GetExcep, Option<SetExcep>),
+    SetExcep(SetExcep),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum AttrDeclarator {
+    WithRaises(String, AttrRaises),
+    IDs(Vec<String>),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct AttrSpec {
+    pub type_spec: TypeSpec,
+    pub declarator: AttrDeclarator,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum AttrDcl {
+    Readonly(ReadonlyAttrSpec),
+    ReadWrite(AttrSpec),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum Export {
+    Op(OpDcl),
+    Attr(AttrDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct InterfaceDef {
+    pub header: InterfaceHeader,
+    pub body: Vec<Export>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum InterfaceDcl {
+    Def(InterfaceDef),
+    ForwardDcl(InterfaceForwardDcl),
 }
