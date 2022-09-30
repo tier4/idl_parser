@@ -8,7 +8,10 @@ use crate::{
         StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec, TypeDcl, TypeSpec, Typedef,
         TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
     },
-    parser::interfaces::{parse_except_dcl, parse_interface_dcl},
+    parser::{
+        interfaces::{parse_except_dcl, parse_interface_dcl},
+        value_types::parse_value_dcl,
+    },
 };
 use nom::{
     branch::alt,
@@ -132,7 +135,19 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Interface(def)))
     }
 
-    let (input, def) = alt((module, const_dcl, type_dcl, except_dcl, interface_dcl))(input)?;
+    fn value_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_value_dcl(input)?;
+        Ok((input, Definition::Value(def)))
+    }
+
+    let (input, def) = alt((
+        module,
+        const_dcl,
+        type_dcl,
+        except_dcl,
+        interface_dcl,
+        value_dcl,
+    ))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, def))
@@ -180,7 +195,7 @@ pub fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
 /// ```text
 /// (5) <const_dcl> ::= "const" <const_type> <identifier> "=" <const_expr>
 /// ```
-fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
+pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
     // "const"
     let (input, _) = tuple((skip_space_and_comment0, tag("const")))(input)?;
 
@@ -691,7 +706,7 @@ fn parse_char_escape(input: &str) -> PResult<char> {
 ///                   | <native_dcl>
 ///                   | <typedef_dcl>
 /// ```
-fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
+pub fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
     fn constr_type(input: &str) -> PResult<TypeDcl> {
         let (input, dcl) = parse_constr_type_dcl(input)?;
         Ok((input, TypeDcl::ConstrType(dcl)))
@@ -1309,7 +1324,7 @@ fn parse_any_declarator(input: &str) -> PResult<AnyDeclarator> {
 /// ```text
 /// (67) <declarators> ::= <declarator> { "," <declarator> }*
 /// ```
-fn parse_declarators(input: &str) -> PResult<Vec<String>> {
+pub fn parse_declarators(input: &str) -> PResult<Vec<String>> {
     separated_list1(
         tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
         parse_declarator,

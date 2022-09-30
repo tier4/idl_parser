@@ -1,5 +1,6 @@
 mod core;
 mod interfaces;
+mod value_types;
 
 use crate::expr::Definition;
 use nom::{error::VerboseError, IResult};

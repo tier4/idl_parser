@@ -19,6 +19,7 @@ pub enum Definition {
     Type(TypeDcl),
     Except(ExceptDcl),
     Interface(InterfaceDcl),
+    Value(ValueDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -364,6 +365,9 @@ pub enum AttrDcl {
 pub enum Export {
     Op(OpDcl),
     Attr(AttrDcl),
+    Type(TypeDcl),
+    Const(ConstDcl),
+    Except(ExceptDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -376,4 +380,64 @@ pub struct InterfaceDef {
 pub enum InterfaceDcl {
     Def(InterfaceDef),
     ForwardDcl(InterfaceForwardDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct InitParamDcl {
+    pub type_spec: TypeSpec,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct InitDcl {
+    pub id: String,
+    pub params: Vec<InitParamDcl>,
+    pub raises: Option<Raises>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum Visibility {
+    Public,
+    Private,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct StateMember {
+    pub visibility: Visibility,
+    pub type_spec: TypeSpec,
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ValueElement {
+    Export(Export),
+    StateMember(StateMember),
+    InitDcl(InitDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ValueInheritanceSpec {
+    pub value_name: Option<ScopedName>,
+    pub interface_name: Option<ScopedName>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ValueHeader {
+    pub id: String,
+    pub inheritance: ValueInheritanceSpec,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ValueDef {
+    pub header: ValueHeader,
+    pub elements: Vec<ValueElement>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ValueForwardDcl(pub String);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ValueDcl {
+    Def(ValueDef),
+    ForwardDcl(ValueForwardDcl),
 }

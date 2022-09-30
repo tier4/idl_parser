@@ -5,10 +5,13 @@ use super::{
     },
     PResult,
 };
-use crate::expr::{
-    AttrDcl, AttrDeclarator, AttrRaises, AttrSpec, ExceptDcl, Export, GetExcep, InterfaceDcl,
-    InterfaceDef, InterfaceForwardDcl, InterfaceHeader, OpDcl, OpTypeSpec, ParamAttribute,
-    ParamDcl, Raises, ReadonlyAttrDeclarator, ReadonlyAttrSpec, ScopedName, SetExcep, TypeSpec,
+use crate::{
+    expr::{
+        AttrDcl, AttrDeclarator, AttrRaises, AttrSpec, ExceptDcl, Export, GetExcep, InterfaceDcl,
+        InterfaceDef, InterfaceForwardDcl, InterfaceHeader, OpDcl, OpTypeSpec, ParamAttribute,
+        ParamDcl, Raises, ReadonlyAttrDeclarator, ReadonlyAttrSpec, ScopedName, SetExcep, TypeSpec,
+    },
+    parser::core::{parse_const_dcl, parse_type_dcl},
 };
 use nom::{
     branch::alt,
@@ -111,7 +114,7 @@ fn parse_interface_inheritance_spec(input: &str) -> PResult<Vec<ScopedName>> {
 /// ```text
 /// (79) <interface_name> ::= <scoped_name>
 /// ```
-fn parse_interface_name(input: &str) -> PResult<ScopedName> {
+pub fn parse_interface_name(input: &str) -> PResult<ScopedName> {
     parse_scoped_name(input)
 }
 
@@ -125,8 +128,12 @@ fn parse_interface_body(input: &str) -> PResult<Vec<Export>> {
 /// ```text
 /// (81) <export> ::= <op_dcl> ";"
 ///                 | <attr_dcl> ";"
+///
+/// (90) <export> ::+ <type_dcl> ";"
+///                 | <const_dcl> ";"
+///                 | <except_dcl> ";"
 /// ```
-fn parse_export(input: &str) -> PResult<Export> {
+pub fn parse_export(input: &str) -> PResult<Export> {
     fn op(input: &str) -> PResult<Export> {
         let (input, op) = parse_op_dcl(input)?;
         Ok((input, Export::Op(op)))
@@ -137,7 +144,22 @@ fn parse_export(input: &str) -> PResult<Export> {
         Ok((input, Export::Attr(attr)))
     }
 
-    let (input, result) = alt((op, attr))(input)?;
+    fn type_dcl(input: &str) -> PResult<Export> {
+        let (input, dcl) = parse_type_dcl(input)?;
+        Ok((input, Export::Type(dcl)))
+    }
+
+    fn const_dcl(input: &str) -> PResult<Export> {
+        let (input, dcl) = parse_const_dcl(input)?;
+        Ok((input, Export::Const(dcl)))
+    }
+
+    fn except(input: &str) -> PResult<Export> {
+        let (input, dcl) = parse_except_dcl(input)?;
+        Ok((input, Export::Except(dcl)))
+    }
+
+    let (input, result) = alt((op, attr, type_dcl, const_dcl, except))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, result))
@@ -247,7 +269,7 @@ fn parse_param_attribute(input: &str) -> PResult<ParamAttribute> {
 /// ```text
 /// (87) <raises_expr> ::= "raises" "(" <scoped_name> { "," <scoped_name> }* ")"
 /// ```
-fn parse_raises_expr(input: &str) -> PResult<Raises> {
+pub fn parse_raises_expr(input: &str) -> PResult<Raises> {
     let (input, _) = tuple((
         tag("raises"),
         skip_space_and_comment0,
