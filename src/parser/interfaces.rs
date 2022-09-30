@@ -159,6 +159,7 @@ pub fn parse_export(input: &str) -> PResult<Export> {
         Ok((input, Export::Except(dcl)))
     }
 
+    let (input, _) = skip_space_and_comment0(input)?;
     let (input, result) = alt((op, attr, type_dcl, const_dcl, except))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
@@ -289,7 +290,7 @@ pub fn parse_raises_expr(input: &str) -> PResult<Raises> {
 /// (88) <attr_dcl> ::= <readonly_attr_spec>
 ///                   | <attr_spec>
 /// ```
-fn parse_attr_dcl(input: &str) -> PResult<AttrDcl> {
+pub fn parse_attr_dcl(input: &str) -> PResult<AttrDcl> {
     fn readonly(input: &str) -> PResult<AttrDcl> {
         let (input, spec) = parse_readonly_attr_spec(input)?;
         Ok((input, AttrDcl::Readonly(spec)))

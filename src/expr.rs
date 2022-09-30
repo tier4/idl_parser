@@ -20,6 +20,8 @@ pub enum Definition {
     Except(ExceptDcl),
     Interface(InterfaceDcl),
     Value(ValueDcl),
+    Component(ComponentDcl),
+    Home(HomeDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -440,4 +442,85 @@ pub struct ValueForwardDcl(pub String);
 pub enum ValueDcl {
     Def(ValueDef),
     ForwardDcl(ValueForwardDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct FactoryParamDcl {
+    pub type_spec: TypeSpec,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct FactoryDcl {
+    pub id: String,
+    pub params: Vec<FactoryParamDcl>,
+    pub raises: Option<Raises>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum HomeExport {
+    Export(Export),
+    FactoryDcl(FactoryDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct HomeHeader {
+    pub id: String,
+    pub inheritance: Option<HomeInheritanceSpec>,
+    pub manages: ScopedName,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct HomeDcl {
+    pub header: HomeHeader,
+    pub body: Vec<HomeExport>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct HomeInheritanceSpec(pub ScopedName);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ComponentForwardDcl(pub String);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ComponentInheritanceSpec(pub ScopedName);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ComponentHeader {
+    pub id: String,
+    pub inheritance: Option<ComponentInheritanceSpec>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct InterfaceType(pub ScopedName);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ProvidesDcl {
+    pub interface_type: InterfaceType,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct UsesDcl {
+    pub interface_type: InterfaceType,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum CompoentExport {
+    Provides(ProvidesDcl),
+    Uses(UsesDcl),
+    Attr(AttrDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ComponentDef {
+    pub header: ComponentHeader,
+    pub body: Vec<CompoentExport>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ComponentDcl {
+    Def(ComponentDef),
+    ForwardDcl(ComponentForwardDcl),
 }

@@ -1,18 +1,3 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    multi::{many0, separated_list0},
-    sequence::{delimited, tuple},
-};
-
-use crate::{
-    expr::{
-        InitDcl, InitParamDcl, ScopedName, StateMember, ValueDcl, ValueDef, ValueElement,
-        ValueForwardDcl, ValueHeader, ValueInheritanceSpec, Visibility,
-    },
-    parser::interfaces::{parse_export, parse_interface_name},
-};
-
 use super::{
     core::{
         parse_declarators, parse_id, parse_scoped_name, parse_simple_declarator, parse_type_spec,
@@ -20,6 +5,19 @@ use super::{
     },
     interfaces::parse_raises_expr,
     PResult,
+};
+use crate::{
+    expr::{
+        InitDcl, InitParamDcl, ScopedName, StateMember, ValueDcl, ValueDef, ValueElement,
+        ValueForwardDcl, ValueHeader, ValueInheritanceSpec, Visibility,
+    },
+    parser::interfaces::{parse_export, parse_interface_name},
+};
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    multi::{many0, separated_list0},
+    sequence::{delimited, tuple},
 };
 
 /// ```text
@@ -134,6 +132,7 @@ fn parse_value_element(input: &str) -> PResult<ValueElement> {
         Ok((input, ValueElement::InitDcl(result)))
     }
 
+    let (input, _) = skip_space_and_comment0(input)?;
     alt((export, state_member, init_dcl))(input)
 }
 

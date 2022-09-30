@@ -9,6 +9,7 @@ use crate::{
         TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
     },
     parser::{
+        components::{parse_component_dcl, parse_home_dcl},
         interfaces::{parse_except_dcl, parse_interface_dcl},
         value_types::parse_value_dcl,
     },
@@ -140,6 +141,16 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Value(def)))
     }
 
+    fn component_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_component_dcl(input)?;
+        Ok((input, Definition::Component(def)))
+    }
+
+    fn home_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_home_dcl(input)?;
+        Ok((input, Definition::Home(def)))
+    }
+
     let (input, def) = alt((
         module,
         const_dcl,
@@ -147,6 +158,8 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         except_dcl,
         interface_dcl,
         value_dcl,
+        component_dcl,
+        home_dcl,
     ))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 

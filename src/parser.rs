@@ -1,3 +1,4 @@
+mod components;
 mod core;
 mod interfaces;
 mod value_types;
