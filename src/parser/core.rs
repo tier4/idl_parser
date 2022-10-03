@@ -555,7 +555,7 @@ fn parse_num(input: &str) -> PResult<Literal> {
         "d" | "D" => {
             let mut scale = 0;
             for n in fraction.bytes() {
-                let val = n - '0' as u8;
+                let val = n - b'0';
                 integer *= 10;
                 integer += val;
                 scale += 1;
@@ -593,11 +593,11 @@ fn parse_decimal(input: &str) -> PResult<BigInt> {
     let (input, tail) = digit0(input)?;
 
     let mut result = BigInt::zero();
-    let n = head as u8 - '0' as u8;
+    let n = head as u8 - b'0';
     result += n;
 
     for n in tail.as_bytes().iter() {
-        let val = *n - '0' as u8;
+        let val = *n - b'0';
         result *= 10;
         result += val;
     }
@@ -612,7 +612,7 @@ fn parse_octal(input: &str) -> PResult<Literal> {
 
     let mut result = BigInt::zero();
     for n in tail.as_bytes().iter() {
-        let val = *n - '0' as u8;
+        let val = *n - b'0';
         result *= 8;
         result += val;
     }
@@ -628,7 +628,7 @@ fn hex_to_num(hex: char) -> u8 {
         'd' | 'D' => 13,
         'e' | 'E' => 14,
         'f' | 'F' => 15,
-        _ => hex as u8 - '0' as u8,
+        _ => hex as u8 - b'0',
     }
 }
 

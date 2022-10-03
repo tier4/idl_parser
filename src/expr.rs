@@ -28,7 +28,7 @@ pub enum Definition {
     TemplateModuleInst(TemplateModuleInst),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ScopedName {
     pub ids: Vec<String>,
 }
@@ -43,7 +43,7 @@ impl ScopedName {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum PrimitiveType {
     Short,            // signed 2^16
     Long,             // signed 2^32
@@ -155,7 +155,7 @@ pub enum Literal {
 
 /// `FixedPoint` represents a fixed point number.
 /// The actual value is `value / 10^scale`.
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct FixedPoint {
     pub value: BigInt,
     pub scale: u64,
@@ -168,7 +168,7 @@ pub struct ConstDcl {
     pub expr: ConstExpr,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct StructForwardDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -197,7 +197,7 @@ pub enum StructDcl {
     ForwardDcl(StructForwardDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct EnumDcl {
     pub id: String,
     pub variants: Vec<String>,
@@ -221,7 +221,7 @@ pub struct ElementSpec {
     pub declarator: AnyDeclarator,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum SwitchTypeSpec {
     PrimitiveType(PrimitiveType),
     ScopedName(ScopedName),
@@ -240,7 +240,7 @@ pub enum UnionDcl {
     ForwardDcl(UnionForwardDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct UnionForwardDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -259,7 +259,7 @@ pub enum TypeDcl {
     Typedef(Typedef),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct NativeDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -314,13 +314,13 @@ pub struct ExceptDcl {
     pub members: Vec<Member>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct InterfaceHeader {
     pub id: String,
     pub parents: Vec<ScopedName>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct InterfaceForwardDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -329,7 +329,7 @@ pub enum OpTypeSpec {
     Void,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ParamAttribute {
     In,
     Out,
@@ -343,7 +343,7 @@ pub struct ParamDcl {
     pub id: String,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Raises(pub Vec<ScopedName>);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -354,7 +354,7 @@ pub struct OpDcl {
     pub raises: Option<Raises>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum ReadonlyAttrDeclarator {
     WithRaises(String, Raises),
     IDs(Vec<String>),
@@ -366,19 +366,19 @@ pub struct ReadonlyAttrSpec {
     pub declarator: ReadonlyAttrDeclarator,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct SetExcep(pub Vec<ScopedName>);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct GetExcep(pub Vec<ScopedName>);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum AttrRaises {
     GetExcep(GetExcep, Option<SetExcep>),
     SetExcep(SetExcep),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum AttrDeclarator {
     WithRaises(String, AttrRaises),
     IDs(Vec<String>),
@@ -430,7 +430,7 @@ pub struct InitDcl {
     pub raises: Option<Raises>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Visibility {
     Public,
     Private,
@@ -450,13 +450,13 @@ pub enum ValueElement {
     InitDcl(InitDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ValueInheritanceSpec {
     pub value_name: Option<ScopedName>,
     pub interface_name: Option<ScopedName>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ValueHeader {
     pub id: String,
     pub inheritance: ValueInheritanceSpec,
@@ -468,7 +468,7 @@ pub struct ValueDef {
     pub elements: Vec<ValueElement>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ValueForwardDcl(pub String);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -496,7 +496,7 @@ pub enum HomeExport {
     FactoryDcl(FactoryDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct HomeHeader {
     pub id: String,
     pub inheritance: Option<HomeInheritanceSpec>,
@@ -509,31 +509,31 @@ pub struct HomeDcl {
     pub body: Vec<HomeExport>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct HomeInheritanceSpec(pub ScopedName);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ComponentForwardDcl(pub String);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ComponentInheritanceSpec(pub ScopedName);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ComponentHeader {
     pub id: String,
     pub inheritance: Option<ComponentInheritanceSpec>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct InterfaceType(pub ScopedName);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ProvidesDcl {
     pub interface_type: InterfaceType,
     pub id: String,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct UsesDcl {
     pub interface_type: InterfaceType,
     pub id: String,
@@ -559,16 +559,16 @@ pub enum ComponentDcl {
     ForwardDcl(ComponentForwardDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PortTypeForwardDcl(pub String);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum PortDcl {
     Port(ScopedName, String),
     MirrorPort(ScopedName, String),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum PortRef {
     Provides(ProvidesDcl),
     Uses(UsesDcl),
@@ -599,7 +599,7 @@ pub enum PortTypeDcl {
     ForwardDcl(PortTypeForwardDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ConnectorInheritSpec(pub ScopedName);
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -608,7 +608,7 @@ pub enum ConnectorExport {
     Attr(AttrDcl),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ConnectorHeader {
     pub id: String,
     pub inheritance: Option<ConnectorInheritSpec>,
@@ -653,7 +653,7 @@ pub struct TemplateModuleInst {
     pub parameters: Vec<ActualParameter>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct TemplateModuleRef {
     pub name: ScopedName,
     pub parameters: Vec<String>,
@@ -699,10 +699,10 @@ pub struct BitsetDcl {
     pub fields: Vec<Bitfield>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct BitValue(pub String);
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct BitmaskDcl {
     pub id: String,
     pub values: Vec<BitValue>,
