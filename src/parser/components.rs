@@ -8,16 +8,18 @@ use super::{
 };
 use crate::{
     expr::{
-        CompoentExport, ComponentDcl, ComponentDef, ComponentForwardDcl, ComponentHeader,
-        ComponentInheritanceSpec, FactoryDcl, FactoryParamDcl, HomeDcl, HomeExport, HomeHeader,
-        HomeInheritanceSpec, InterfaceType, ProvidesDcl, UsesDcl,
+        ComponentDcl, ComponentDef, ComponentExport, ComponentForwardDcl, ComponentHeader,
+        ComponentInheritanceSpec, ConnectorDcl, ConnectorExport, ConnectorHeader,
+        ConnectorInheritSpec, FactoryDcl, FactoryParamDcl, HomeDcl, HomeExport, HomeHeader,
+        HomeInheritanceSpec, InterfaceType, PortBody, PortDcl, PortExport, PortRef, PortTypeDcl,
+        PortTypeDef, PortTypeForwardDcl, ProvidesDcl, UsesDcl,
     },
     parser::interfaces::parse_attr_dcl,
 };
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    multi::{many0, separated_list0},
+    multi::{many0, many1, separated_list0},
     sequence::{delimited, tuple},
 };
 
@@ -93,7 +95,7 @@ fn parse_component_inheritance_spec(input: &str) -> PResult<ComponentInheritance
 /// ```text
 /// (139) <component_body> ::= <component_export>*
 /// ```
-fn parse_componet_body(input: &str) -> PResult<Vec<CompoentExport>> {
+fn parse_componet_body(input: &str) -> PResult<Vec<ComponentExport>> {
     many0(parse_compoent_export)(input)
 }
 
@@ -101,28 +103,36 @@ fn parse_componet_body(input: &str) -> PResult<Vec<CompoentExport>> {
 /// (140) <component_export> ::= <provides_dcl> ";"
 ///                            | <uses_dcl> ";"
 ///                            | <attr_dcl> ";"
+///
+/// (179) <component_export> ::+ <port_dcl> ";"
 /// ```
-fn parse_compoent_export(input: &str) -> PResult<CompoentExport> {
-    fn provides(input: &str) -> PResult<CompoentExport> {
+fn parse_compoent_export(input: &str) -> PResult<ComponentExport> {
+    fn provides(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_provides_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
-        Ok((input, CompoentExport::Provides(result)))
+        Ok((input, ComponentExport::Provides(result)))
     }
 
-    fn uses(input: &str) -> PResult<CompoentExport> {
+    fn uses(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_uses_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
-        Ok((input, CompoentExport::Uses(result)))
+        Ok((input, ComponentExport::Uses(result)))
     }
 
-    fn attr(input: &str) -> PResult<CompoentExport> {
+    fn attr(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_attr_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
-        Ok((input, CompoentExport::Attr(result)))
+        Ok((input, ComponentExport::Attr(result)))
+    }
+
+    fn port(input: &str) -> PResult<ComponentExport> {
+        let (input, result) = parse_port_dcl(input)?;
+        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+        Ok((input, ComponentExport::Port(result)))
     }
 
     let (input, _) = skip_space_and_comment0(input)?;
-    alt((provides, uses, attr))(input)
+    alt((provides, uses, attr, port))(input)
 }
 
 /// ```text
@@ -281,4 +291,193 @@ fn parse_factory_param_dcl(input: &str) -> PResult<FactoryParamDcl> {
     let (input, type_spec) = parse_type_spec(input)?;
     let (input, id) = parse_simple_declarator(input)?;
     Ok((input, FactoryParamDcl { type_spec, id }))
+}
+
+/// ```text
+/// (172) <porttype_dcl> ::= <porttype_def>
+///                        | <porttype_forward_dcl>
+/// ```
+pub fn parse_porttype_dcl(input: &str) -> PResult<PortTypeDcl> {
+    fn def(input: &str) -> PResult<PortTypeDcl> {
+        let (input, result) = parse_porttype_def(input)?;
+        Ok((input, PortTypeDcl::Def(result)))
+    }
+
+    fn forward_dcl(input: &str) -> PResult<PortTypeDcl> {
+        let (input, result) = parse_porttype_forward_dcl(input)?;
+        Ok((input, PortTypeDcl::ForwardDcl(result)))
+    }
+
+    alt((def, forward_dcl))(input)
+}
+
+/// ```text
+/// (173) <porttype_forward_dcl> ::= "porttype" <identifier>
+/// ```
+fn parse_porttype_forward_dcl(input: &str) -> PResult<PortTypeForwardDcl> {
+    let (input, id) = parse_id(input)?;
+    Ok((input, PortTypeForwardDcl(id)))
+}
+
+/// ```text
+/// (174) <porttype_def> ::= "porttype" <identifier> "{" <port_body> "}"
+/// ```
+fn parse_porttype_def(input: &str) -> PResult<PortTypeDef> {
+    let (input, (_, _, id)) = tuple((tag("porttype"), skip_space_and_comment1, parse_id))(input)?;
+
+    let (input, body) = delimited(
+        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
+        parse_port_body,
+        tuple((skip_space_and_comment0, tag("}"))),
+    )(input)?;
+
+    Ok((input, PortTypeDef { id, body }))
+}
+
+/// ```text
+/// (175) <port_body> ::= <port_ref> <port_export>*
+/// ```
+fn parse_port_body(input: &str) -> PResult<PortBody> {
+    let (input, port_ref) = parse_port_ref(input)?;
+    let (input, port_export) = many0(parse_port_export)(input)?;
+    Ok((
+        input,
+        PortBody {
+            port_ref,
+            port_export,
+        },
+    ))
+}
+
+/// ```text
+/// (176) <port_ref> ::= <provides_dcl> ";"
+///                    | <uses_dcl> ";"
+///                    | <port_dcl> ";"
+/// ```
+fn parse_port_ref(input: &str) -> PResult<PortRef> {
+    fn provides(input: &str) -> PResult<PortRef> {
+        let (input, result) = parse_provides_dcl(input)?;
+        Ok((input, PortRef::Provides(result)))
+    }
+
+    fn uses(input: &str) -> PResult<PortRef> {
+        let (input, result) = parse_uses_dcl(input)?;
+        Ok((input, PortRef::Uses(result)))
+    }
+
+    fn port(input: &str) -> PResult<PortRef> {
+        let (input, result) = parse_port_dcl(input)?;
+        Ok((input, PortRef::Port(result)))
+    }
+
+    let (input, result) = alt((provides, uses, port))(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+
+    Ok((input, result))
+}
+
+/// ```text
+/// (177) <port_export> ::= <port_ref>
+///                       | <attr_dcl> ";"
+/// ```
+fn parse_port_export(input: &str) -> PResult<PortExport> {
+    fn port_ref(input: &str) -> PResult<PortExport> {
+        let (input, result) = parse_port_ref(input)?;
+        Ok((input, PortExport::PortRef(result)))
+    }
+
+    fn attr(input: &str) -> PResult<PortExport> {
+        let (input, result) = parse_attr_dcl(input)?;
+        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+        Ok((input, PortExport::Attr(result)))
+    }
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    alt((port_ref, attr))(input)
+}
+
+/// ```text
+/// (178) <port_dcl> ::= { "port" | "mirrorport" } <scoped_name> <identifier>
+/// ```
+fn parse_port_dcl(input: &str) -> PResult<PortDcl> {
+    let (input, (p, _)) = tuple((
+        alt((tag("port"), tag("mirrorport"))),
+        skip_space_and_comment1,
+    ))(input)?;
+
+    let (input, (name, _, id)) =
+        tuple((parse_scoped_name, skip_space_and_comment1, parse_id))(input)?;
+
+    match p {
+        "port" => Ok((input, PortDcl::Port(name, id))),
+        "mirrorport" => Ok((input, PortDcl::MirrorPort(name, id))),
+        _ => unreachable!(),
+    }
+}
+
+/// ```text
+/// (180) <connector_dcl> ::= <connector_header> "{" <connector_export>+ "}"
+/// ```
+pub fn parse_connector_dcl(input: &str) -> PResult<ConnectorDcl> {
+    let (input, header) = parse_connector_header(input)?;
+    let (input, export) = delimited(
+        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
+        many1(parse_connector_export),
+        tuple((skip_space_and_comment0, tag("}"))),
+    )(input)?;
+
+    Ok((input, ConnectorDcl { header, export }))
+}
+
+/// ```text
+/// (181) <connector_header> ::= "connector" <identifier> [ <connector_inherit_spec> ]
+/// ```
+fn parse_connector_header(input: &str) -> PResult<ConnectorHeader> {
+    let (input, (_, _, id)) = tuple((tag("connector"), skip_space_and_comment1, parse_id))(input)?;
+
+    if let Ok((input, inheritance)) = parse_connector_inherit_spec(input) {
+        Ok((
+            input,
+            ConnectorHeader {
+                id,
+                inheritance: Some(inheritance),
+            },
+        ))
+    } else {
+        Ok((
+            input,
+            ConnectorHeader {
+                id,
+                inheritance: None,
+            },
+        ))
+    }
+}
+
+/// ```text
+/// (182) <connector_inherit_spec> ::= ":" <scoped_name>
+/// ```
+fn parse_connector_inherit_spec(input: &str) -> PResult<ConnectorInheritSpec> {
+    let (input, _) = tuple((skip_space_and_comment0, tag(":"), skip_space_and_comment0))(input)?;
+    let (input, name) = parse_scoped_name(input)?;
+    Ok((input, ConnectorInheritSpec(name)))
+}
+
+/// ```text
+/// (183) <connector_export> ::= <port_ref>
+///                            | <attr_dcl> ";"
+/// ```
+fn parse_connector_export(input: &str) -> PResult<ConnectorExport> {
+    fn port_ref(input: &str) -> PResult<ConnectorExport> {
+        let (input, result) = parse_port_ref(input)?;
+        Ok((input, ConnectorExport::PortRef(result)))
+    }
+
+    fn attr(input: &str) -> PResult<ConnectorExport> {
+        let (input, result) = parse_attr_dcl(input)?;
+        Ok((input, ConnectorExport::Attr(result)))
+    }
+
+    let (input, _) = skip_space_and_comment0(input)?;
+    alt((port_ref, attr))(input)
 }

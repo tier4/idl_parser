@@ -22,6 +22,8 @@ pub enum Definition {
     Value(ValueDcl),
     Component(ComponentDcl),
     Home(HomeDcl),
+    PortType(PortTypeDcl),
+    Connector(ConnectorDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -507,20 +509,82 @@ pub struct UsesDcl {
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub enum CompoentExport {
+pub enum ComponentExport {
     Provides(ProvidesDcl),
     Uses(UsesDcl),
     Attr(AttrDcl),
+    Port(PortDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct ComponentDef {
     pub header: ComponentHeader,
-    pub body: Vec<CompoentExport>,
+    pub body: Vec<ComponentExport>,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum ComponentDcl {
     Def(ComponentDef),
     ForwardDcl(ComponentForwardDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct PortTypeForwardDcl(pub String);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum PortDcl {
+    Port(ScopedName, String),
+    MirrorPort(ScopedName, String),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum PortRef {
+    Provides(ProvidesDcl),
+    Uses(UsesDcl),
+    Port(PortDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum PortExport {
+    PortRef(PortRef),
+    Attr(AttrDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct PortBody {
+    pub port_ref: PortRef,
+    pub port_export: Vec<PortExport>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct PortTypeDef {
+    pub id: String,
+    pub body: PortBody,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum PortTypeDcl {
+    Def(PortTypeDef),
+    ForwardDcl(PortTypeForwardDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ConnectorInheritSpec(pub ScopedName);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ConnectorExport {
+    PortRef(PortRef),
+    Attr(AttrDcl),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ConnectorHeader {
+    pub id: String,
+    pub inheritance: Option<ConnectorInheritSpec>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct ConnectorDcl {
+    pub header: ConnectorHeader,
+    pub export: Vec<ConnectorExport>,
 }

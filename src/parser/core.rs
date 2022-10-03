@@ -9,7 +9,9 @@ use crate::{
         TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
     },
     parser::{
-        components::{parse_component_dcl, parse_home_dcl},
+        components::{
+            parse_component_dcl, parse_connector_dcl, parse_home_dcl, parse_porttype_dcl,
+        },
         interfaces::{parse_except_dcl, parse_interface_dcl},
         value_types::parse_value_dcl,
     },
@@ -151,6 +153,16 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Home(def)))
     }
 
+    fn port_type_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_porttype_dcl(input)?;
+        Ok((input, Definition::PortType(def)))
+    }
+
+    fn connector_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_connector_dcl(input)?;
+        Ok((input, Definition::Connector(def)))
+    }
+
     let (input, def) = alt((
         module,
         const_dcl,
@@ -160,6 +172,8 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         value_dcl,
         component_dcl,
         home_dcl,
+        port_type_dcl,
+        connector_dcl,
     ))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
