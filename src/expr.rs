@@ -24,6 +24,8 @@ pub enum Definition {
     Home(HomeDcl),
     PortType(PortTypeDcl),
     Connector(ConnectorDcl),
+    TemplateModuleDcl(TemplateModuleDcl),
+    TemplateModuleInst(TemplateModuleInst),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -587,4 +589,57 @@ pub struct ConnectorHeader {
 pub struct ConnectorDcl {
     pub header: ConnectorHeader,
     pub export: Vec<ConnectorExport>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum FormalParameterType {
+    Typename,
+    Interface,
+    ValueType,
+    EventType,
+    Struct,
+    Union,
+    Exception,
+    Enum,
+    Sequence,
+    Const(ConstType),
+    SequenceType(SequenceType),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct FormalParameter {
+    pub parameter_type: FormalParameterType,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum ActualParameter {
+    TypeSpec(TypeSpec),
+    ConstExpr(ConstExpr),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct TemplateModuleInst {
+    pub name: ScopedName,
+    pub parameters: Vec<ActualParameter>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct TemplateModuleRef {
+    pub name: ScopedName,
+    pub parameters: Vec<String>,
+    pub id: String,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum TplDefinition {
+    Definition(Definition),
+    TemplateModuleRef(TemplateModuleRef),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct TemplateModuleDcl {
+    pub id: String,
+    pub parameters: Vec<FormalParameter>,
+    pub definitions: Vec<TplDefinition>,
 }

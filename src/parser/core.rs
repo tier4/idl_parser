@@ -13,6 +13,7 @@ use crate::{
             parse_component_dcl, parse_connector_dcl, parse_home_dcl, parse_porttype_dcl,
         },
         interfaces::{parse_except_dcl, parse_interface_dcl},
+        template::{parse_template_module_dcl, parse_template_module_inst},
         value_types::parse_value_dcl,
     },
 };
@@ -163,6 +164,16 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Connector(def)))
     }
 
+    fn template_module_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_template_module_dcl(input)?;
+        Ok((input, Definition::TemplateModuleDcl(def)))
+    }
+
+    fn template_module_inst(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_template_module_inst(input)?;
+        Ok((input, Definition::TemplateModuleInst(def)))
+    }
+
     let (input, def) = alt((
         module,
         const_dcl,
@@ -174,6 +185,8 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         home_dcl,
         port_type_dcl,
         connector_dcl,
+        template_module_dcl,
+        template_module_inst,
     ))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
@@ -263,7 +276,7 @@ pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
 ///                    | <wide_string_type>
 ///                    | <scoped_name>
 /// ```
-fn parse_const_type(input: &str) -> PResult<ConstType> {
+pub fn parse_const_type(input: &str) -> PResult<ConstType> {
     if let Ok((input, result)) = alt((parse_int_words, parse_long_double))(input) {
         return Ok((input, ConstType::PrimitiveType(result)));
     }
@@ -298,7 +311,7 @@ fn parse_const_type(input: &str) -> PResult<ConstType> {
 /// ( 7) <const_expr> ::= <or_expr>
 /// (19) <positive_int_const> ::= <const_expr>
 /// ```
-fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
+pub fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
     parse_or_expr(input)
 }
 
@@ -888,7 +901,7 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
 /// (39) <sequence_type> ::= "sequence" "<" <type_spec> "," <positive_int_const> ">"
 ///                        | "sequence" "<" <type_spec> ">"
 /// ```
-fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
+pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
     let (input, _) = tag("sequence")(input)?;
 
     let (input, _) = skip_space_and_comment0(input)?;
