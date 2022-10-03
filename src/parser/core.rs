@@ -9,6 +9,7 @@ use crate::{
         TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
     },
     parser::{
+        annotations::parse_annotation_dcl,
         components::{
             parse_component_dcl, parse_connector_dcl, parse_home_dcl, parse_porttype_dcl,
         },
@@ -113,6 +114,8 @@ pub fn parse_id(input: &str) -> PResult<String> {
 ///
 /// (184) <definition> ::+ <template_module_dcl> ";"
 ///                      | <template_module_inst> ";"
+///
+/// (218) <definition> ::+ <annotaion_dcl> ";"
 /// ```
 pub fn parse_definition(input: &str) -> PResult<Definition> {
     fn module(input: &str) -> PResult<Definition> {
@@ -175,6 +178,11 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::TemplateModuleInst(def)))
     }
 
+    fn annotation_dcl(input: &str) -> PResult<Definition> {
+        let (input, def) = parse_annotation_dcl(input)?;
+        Ok((input, Definition::Annotation(def)))
+    }
+
     let (input, def) = alt((
         module,
         const_dcl,
@@ -188,6 +196,7 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         connector_dcl,
         template_module_dcl,
         template_module_inst,
+        annotation_dcl,
     ))(input)?;
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
@@ -1319,7 +1328,7 @@ fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
 /// ```text
 /// (57) <enum_dcl> ::= "enum" <identifier> "{" <enumerator> { "," <enumerator> }* "}"
 /// ```
-fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
+pub fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
     // "enum"
     let (input, _) = tuple((
         skip_space_and_comment0,
@@ -1381,7 +1390,7 @@ pub fn parse_simple_declarator(input: &str) -> PResult<String> {
 /// ```text
 /// (63) <typedef_dcl> ::= "typedef" <type_declarator>
 /// ```
-fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
+pub fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
     let (input, _) = tuple((tag("typedef"), skip_space_and_comment1))(input)?;
     parse_type_declarator(input)
 }

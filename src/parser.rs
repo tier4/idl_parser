@@ -1,3 +1,4 @@
+mod annotations;
 mod components;
 mod core;
 mod extended_data_types;

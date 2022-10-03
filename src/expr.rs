@@ -26,6 +26,7 @@ pub enum Definition {
     Connector(ConnectorDcl),
     TemplateModuleDcl(TemplateModuleDcl),
     TemplateModuleInst(TemplateModuleInst),
+    Annotation(AnnotationDcl),
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -706,4 +707,46 @@ pub struct BitValue(pub String);
 pub struct BitmaskDcl {
     pub id: String,
     pub values: Vec<BitValue>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct AnnotationHeader(pub String);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct AnnotationApplParam {
+    pub id: String,
+    pub expr: ConstExpr,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum AnnotationApplParams {
+    ConstExpr(ConstExpr),
+    ApplParams(Vec<AnnotationApplParam>),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct AnnotationAppl {
+    pub name: ScopedName,
+    pub params: Option<AnnotationApplParams>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct AnnotationMember {
+    pub member_type: ConstType,
+    pub declarator: String,
+    pub default_value: Option<ConstExpr>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum AnnotationBody {
+    AnnotationMember(AnnotationMember),
+    Enum(EnumDcl),
+    Const(ConstDcl),
+    Typedef(Typedef),
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct AnnotationDcl {
+    pub header: AnnotationHeader,
+    pub body: Vec<AnnotationBody>,
 }
