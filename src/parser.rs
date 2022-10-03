@@ -1,5 +1,6 @@
 mod components;
 mod core;
+mod extended_data_types;
 mod interfaces;
 mod template;
 mod value_types;

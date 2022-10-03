@@ -146,7 +146,7 @@ fn parse_state_member(input: &str) -> PResult<StateMember> {
     let (input, type_spec) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment1(input)?;
-    let (input, ids) = parse_declarators(input)?;
+    let (input, declarators) = parse_declarators(input)?;
 
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
@@ -161,7 +161,7 @@ fn parse_state_member(input: &str) -> PResult<StateMember> {
         StateMember {
             visibility,
             type_spec,
-            ids,
+            declarators,
         },
     ))
 }

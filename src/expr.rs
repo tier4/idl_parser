@@ -36,18 +36,7 @@ pub struct ScopedName {
 impl ScopedName {
     pub fn to_primitive(&self) -> Option<PrimitiveType> {
         if self.ids.len() == 1 {
-            match self.ids[0].as_str() {
-                "char" => Some(PrimitiveType::Char),
-                "wchar" => Some(PrimitiveType::WChar),
-                "boolean" => Some(PrimitiveType::Boolean),
-                "octet" => Some(PrimitiveType::Octet),
-                "short" => Some(PrimitiveType::Short),
-                "long" => Some(PrimitiveType::Long),
-                "double" => Some(PrimitiveType::Double),
-                "float" => Some(PrimitiveType::Float),
-                "any" => Some(PrimitiveType::Any),
-                _ => None,
-            }
+            PrimitiveType::new(self.ids[0].as_str())
         } else {
             None
         }
@@ -72,6 +61,41 @@ pub enum PrimitiveType {
 
     // an opaque 8-bit quantity that is guaranteed not to undergo any change by the middleware
     Octet,
+
+    // Extended types
+    Int8,
+    Uint8,
+    Int16,
+    Uint16,
+    Int32,
+    Uint32,
+    Int64,
+    Uint64,
+}
+
+impl PrimitiveType {
+    pub fn new(c: &str) -> Option<Self> {
+        match c {
+            "char" => Some(PrimitiveType::Char),
+            "wchar" => Some(PrimitiveType::WChar),
+            "boolean" => Some(PrimitiveType::Boolean),
+            "octet" => Some(PrimitiveType::Octet),
+            "short" => Some(PrimitiveType::Short),
+            "long" => Some(PrimitiveType::Long),
+            "double" => Some(PrimitiveType::Double),
+            "float" => Some(PrimitiveType::Float),
+            "any" => Some(PrimitiveType::Any),
+            "int8" => Some(PrimitiveType::Int8),
+            "uint8" => Some(PrimitiveType::Uint8),
+            "int16" => Some(PrimitiveType::Int16),
+            "uint16" => Some(PrimitiveType::Uint16),
+            "int32" => Some(PrimitiveType::Int32),
+            "uint32" => Some(PrimitiveType::Uint32),
+            "int64" => Some(PrimitiveType::Int64),
+            "uint64" => Some(PrimitiveType::Uint64),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -151,18 +175,20 @@ pub struct StructForwardDcl(pub String);
 pub enum TypeSpec {
     PrimitiveType(PrimitiveType),
     ScopedName(ScopedName),
+    Template(Box<TemplateTypeSpec>),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Member {
     pub type_spec: TypeSpec,
-    pub ids: Vec<String>,
+    pub declarators: Vec<AnyDeclarator>,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct StructDef {
     pub id: String,
     pub members: Vec<Member>,
+    pub inheritance: Option<ScopedName>,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -192,7 +218,7 @@ pub struct Case {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct ElementSpec {
     pub type_spec: TypeSpec,
-    pub id: String,
+    pub declarator: AnyDeclarator,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -222,6 +248,8 @@ pub enum ConstrTypeDcl {
     Struct(StructDcl),
     Union(UnionDcl),
     Enum(EnumDcl),
+    Bitset(BitsetDcl),
+    Bitmask(BitmaskDcl),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -259,6 +287,7 @@ pub enum TemplateTypeSpec {
     String(StringType),
     WString(WStringType),
     FixedPoint(FixedPtType),
+    Map(MapType),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -411,7 +440,7 @@ pub enum Visibility {
 pub struct StateMember {
     pub visibility: Visibility,
     pub type_spec: TypeSpec,
-    pub ids: Vec<String>,
+    pub declarators: Vec<AnyDeclarator>,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -642,4 +671,39 @@ pub struct TemplateModuleDcl {
     pub id: String,
     pub parameters: Vec<FormalParameter>,
     pub definitions: Vec<TplDefinition>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct MapType {
+    pub key: TypeSpec,
+    pub value: TypeSpec,
+    pub size: Option<ConstExpr>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct BitfieldSpec {
+    pub bits: ConstExpr,
+    pub destination_type: Option<PrimitiveType>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct Bitfield {
+    pub spec: BitfieldSpec,
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct BitsetDcl {
+    pub id: String,
+    pub name: Option<ScopedName>,
+    pub fields: Vec<Bitfield>,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct BitValue(pub String);
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct BitmaskDcl {
+    pub id: String,
+    pub values: Vec<BitValue>,
 }

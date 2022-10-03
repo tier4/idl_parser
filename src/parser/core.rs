@@ -12,6 +12,7 @@ use crate::{
         components::{
             parse_component_dcl, parse_connector_dcl, parse_home_dcl, parse_porttype_dcl,
         },
+        extended_data_types::{parse_bitmask_dcl, parse_bitset_dcl, parse_map_type},
         interfaces::{parse_except_dcl, parse_interface_dcl},
         template::{parse_template_module_dcl, parse_template_module_inst},
         value_types::parse_value_dcl,
@@ -766,10 +767,16 @@ pub fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
 }
 
 /// ```text
-/// (21) <type_spec> ::= <simple_type_spec>
+/// ( 21) <type_spec> ::= <simple_type_spec>
+/// (216) <type_spec> ::+ <template_type_spec>
 /// ```
 pub fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
-    parse_simple_type_spec(input)
+    fn template_type_spec(input: &str) -> PResult<TypeSpec> {
+        let (input, t) = parse_template_type_spec(input)?;
+        Ok((input, TypeSpec::Template(Box::new(t))))
+    }
+
+    alt((template_type_spec, parse_simple_type_spec))(input)
 }
 
 /// ```text
@@ -802,7 +809,7 @@ fn parse_simple_type_spec(input: &str) -> PResult<TypeSpec> {
 // ```
 
 /// Parse integer types consisting more than or equal to 2 words.
-fn parse_int_words(input: &str) -> PResult<PrimitiveType> {
+pub fn parse_int_words(input: &str) -> PResult<PrimitiveType> {
     fn long_long(input: &str) -> PResult<PrimitiveType> {
         let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
         Ok((input, PrimitiveType::LongLong))
@@ -865,13 +872,26 @@ fn parse_long_double(input: &str) -> PResult<PrimitiveType> {
 // (35) <wide_char_type> ::= "wchar"
 // (36) <boolean_type> ::= "boolean"
 // (37) <octet_type> ::= "octet"
+//
+// (206) <signed_int> ::+ <signed_tiny_int>
+// (207) <unsigned_int> ::+ <unsigned_tiny_int>
+// (208) <signed_tiny_int>     ::= "int8"
+// (209) <unsigned_tiny_int>   ::= "uint8"
+// (210) <signed_short_int>    ::+ "int16"
+// (211) <signed_long_int>     ::+ "int32"
+// (212) <signed_longlong_int> ::+ "int64"
+// (213) <signed_short_int>    ::+ "int16"
+// (214) <signed_long_int>     ::+ "int32"
+// (215) <signed_longlong_int> ::+ "int64"
 // ```
 
 /// ```text
-/// (38) <template_type_spec> ::= <sequence_type>
-///                             | <string_type>
-///                             | <wide_string_type>
-///                             | <fixed_pt_type>
+/// ( 38) <template_type_spec> ::= <sequence_type>
+///                              | <string_type>
+///                              | <wide_string_type>
+///                              | <fixed_pt_type>
+///
+/// (197) <template_type_spec> ::+ <map_type>
 /// ```
 fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
     fn sequence(input: &str) -> PResult<TemplateTypeSpec> {
@@ -894,7 +914,12 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
         Ok((input, TemplateTypeSpec::FixedPoint(t)))
     }
 
-    alt((sequence, string, wide_string, fixed_pt))(input)
+    fn map_type(input: &str) -> PResult<TemplateTypeSpec> {
+        let (input, t) = parse_map_type(input)?;
+        Ok((input, TemplateTypeSpec::Map(t)))
+    }
+
+    alt((sequence, string, wide_string, fixed_pt, map_type))(input)
 }
 
 /// ```text
@@ -997,9 +1022,12 @@ fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
 // ```
 
 /// ```text
-/// (44) <constr_type_dcl> ::= <struct_dcl>
-///                          | <union_dcl>
-///                          | <enum_dcl>
+/// ( 44) <constr_type_dcl> ::= <struct_dcl>
+///                           | <union_dcl>
+///                           | <enum_dcl>
+///
+/// (198) <constr_type_dcl> ::+ <bitset_dcl>
+///                           | <bitmask_dcl>
 /// ```
 fn parse_constr_type_dcl(input: &str) -> PResult<ConstrTypeDcl> {
     fn struct_type(input: &str) -> PResult<ConstrTypeDcl> {
@@ -1017,7 +1045,17 @@ fn parse_constr_type_dcl(input: &str) -> PResult<ConstrTypeDcl> {
         Ok((input, ConstrTypeDcl::Union(t)))
     }
 
-    alt((struct_type, enum_type, union_type))(input)
+    fn bitset(input: &str) -> PResult<ConstrTypeDcl> {
+        let (input, t) = parse_bitset_dcl(input)?;
+        Ok((input, ConstrTypeDcl::Bitset(t)))
+    }
+
+    fn bitmask(input: &str) -> PResult<ConstrTypeDcl> {
+        let (input, t) = parse_bitmask_dcl(input)?;
+        Ok((input, ConstrTypeDcl::Bitmask(t)))
+    }
+
+    alt((struct_type, enum_type, union_type, bitset, bitmask))(input)
 }
 
 /// ```text
@@ -1040,7 +1078,10 @@ fn parse_struct_dcl(input: &str) -> PResult<StructDcl> {
 }
 
 /// ```text
-/// (46) <struct_def> ::= "struct" <identifier> "{" <member>+ "}"
+/// ( 46) <struct_def> ::= "struct" <identifier> "{" <member>+ "}"
+///
+/// (195) <struct_def> ::+ "struct" <identifier> ":" <scoped_name> "{" <member>* "}"
+///                      | "struct" <identifier> "{" "}"
 /// ```
 fn parse_struct_def(input: &str) -> PResult<StructDef> {
     // "struct"
@@ -1049,14 +1090,30 @@ fn parse_struct_def(input: &str) -> PResult<StructDef> {
     // <identifier>
     let (input, id) = parse_id(input)?;
 
-    // "{" <member>+ "}"
+    let (input, _) = skip_space_and_comment0(input)?;
+
+    let (input, inheritance) = if let Ok((input, _)) = tag::<&str, &str, Error<&str>>(":")(input) {
+        let (input, (_, name)) = tuple((skip_space_and_comment0, parse_scoped_name))(input)?;
+        (input, Some(name))
+    } else {
+        (input, None)
+    };
+
+    // "{" <member>* "}"
     let (input, members) = delimited(
         tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        many1(parse_member),
+        many0(parse_member),
         tuple((skip_space_and_comment0, tag("}"))),
     )(input)?;
 
-    Ok((input, StructDef { id, members }))
+    Ok((
+        input,
+        StructDef {
+            id,
+            members,
+            inheritance,
+        },
+    ))
 }
 
 /// ```text
@@ -1069,12 +1126,18 @@ pub fn parse_member(input: &str) -> PResult<Member> {
 
     // <declarators>
     let (input, _) = skip_space_and_comment1(input)?;
-    let (input, ids) = parse_declarators(input)?;
+    let (input, declarators) = parse_declarators(input)?;
 
     // ";"
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
-    Ok((input, Member { type_spec, ids }))
+    Ok((
+        input,
+        Member {
+            type_spec,
+            declarators,
+        },
+    ))
 }
 
 /// ```text
@@ -1143,10 +1206,13 @@ fn parse_union_def(input: &str) -> PResult<UnionDef> {
 }
 
 /// ```text
-/// (51) <switch_type_spec> ::= <integer_type>
-///                           | <char_type>
-///                           | <boolean_type>
-///                           | <scoped_name>
+/// ( 51) <switch_type_spec> ::= <integer_type>
+///                            | <char_type>
+///                            | <boolean_type>
+///                            | <scoped_name>
+///
+/// (196) <switch_type_spec> ::+ <wide_char_type>
+///                            | <octet_type>
 /// ```
 fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
     if let Ok((input, result)) = parse_int_words(input) {
@@ -1164,6 +1230,16 @@ fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
         "long" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Long))),
         "char" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Char))),
         "boolean" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Boolean))),
+        "int8" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int8))),
+        "uint8" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint8))),
+        "int16" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int16))),
+        "uint16" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint16))),
+        "int32" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int32))),
+        "uint32" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint32))),
+        "int64" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int64))),
+        "uint64" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint64))),
+        "wchar" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::WChar))),
+        "octet" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Octet))),
         _ => Ok((input, SwitchTypeSpec::ScopedName(name))),
     }
 }
@@ -1218,9 +1294,15 @@ fn parse_element_spec(input: &str) -> PResult<ElementSpec> {
     let (input, type_spec) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment1(input)?;
-    let (input, id) = parse_declarator(input)?;
+    let (input, declarator) = parse_declarator(input)?;
 
-    Ok((input, ElementSpec { type_spec, id }))
+    Ok((
+        input,
+        ElementSpec {
+            type_spec,
+            declarator,
+        },
+    ))
 }
 
 /// ```text
@@ -1364,7 +1446,7 @@ fn parse_any_declarator(input: &str) -> PResult<AnyDeclarator> {
 /// ```text
 /// (67) <declarators> ::= <declarator> { "," <declarator> }*
 /// ```
-pub fn parse_declarators(input: &str) -> PResult<Vec<String>> {
+pub fn parse_declarators(input: &str) -> PResult<Vec<AnyDeclarator>> {
     separated_list1(
         tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
         parse_declarator,
@@ -1372,10 +1454,11 @@ pub fn parse_declarators(input: &str) -> PResult<Vec<String>> {
 }
 
 /// ```text
-/// (68) <declarator> ::= <simple_declarator>
+/// ( 68) <declarator> ::= <simple_declarator>
+/// (217) <declarator> ::+ <array_declarator>
 /// ```
-fn parse_declarator(input: &str) -> PResult<String> {
-    parse_simple_declarator(input)
+fn parse_declarator(input: &str) -> PResult<AnyDeclarator> {
+    parse_any_declarator(input)
 }
 
 fn parse_keywards(input: &str) -> PResult<&str> {
