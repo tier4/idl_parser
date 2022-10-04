@@ -1,7 +1,7 @@
 use super::{
     core::{
-        parse_const_expr, parse_id, parse_int_words, parse_scoped_name, parse_type_spec,
-        skip_space_and_comment0, skip_space_and_comment1,
+        delimiter, lparen, parse_const_expr, parse_id, parse_int_words, parse_scoped_name,
+        parse_type_spec, rparen, skip_space_and_comment0, skip_space_and_comment1,
     },
     PResult,
 };
@@ -21,19 +21,13 @@ use nom::{
 ///                    | "map" "<" <type_spec> "," <type_spec> " ">"
 /// ```
 pub fn parse_map_type(input: &str) -> PResult<MapType> {
-    let (input, _) = tuple((
-        tag("map"),
-        skip_space_and_comment0,
-        tag("<"),
-        skip_space_and_comment0,
-    ))(input)?;
+    let (input, _) = tuple((tag("map"), lparen("<")))(input)?;
 
     let (input, key) = parse_type_spec(input)?;
-    let (input, _) = tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0))(input)?;
+    let (input, _) = delimiter(",")(input)?;
     let (input, value) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment0(input)?;
-
     let (input, c) = alt((tag(">"), tag(",")))(input)?;
 
     if c == ">" {
@@ -47,11 +41,7 @@ pub fn parse_map_type(input: &str) -> PResult<MapType> {
         ));
     }
 
-    let (input, size) = delimited(
-        skip_space_and_comment0,
-        parse_const_expr,
-        tuple((skip_space_and_comment0, tag(">"))),
-    )(input)?;
+    let (input, size) = delimited(skip_space_and_comment0, parse_const_expr, rparen(">"))(input)?;
 
     Ok((
         input,
@@ -81,11 +71,7 @@ pub fn parse_bitset_dcl(input: &str) -> PResult<BitsetDcl> {
         (input, None)
     };
 
-    let (input, fields) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        many0(parse_bitfield),
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, fields) = delimited(lparen("{"), many0(parse_bitfield), rparen("}"))(input)?;
 
     Ok((input, BitsetDcl { id, name, fields }))
 }
@@ -107,12 +93,7 @@ fn parse_bitfield(input: &str) -> PResult<Bitfield> {
 ///                         | "bitfield" "<" <positive_int_const> "," <destination_type> ">"
 /// ```
 fn parse_bitfield_spec(input: &str) -> PResult<BitfieldSpec> {
-    let (input, _) = tuple((
-        tag("bitfield"),
-        skip_space_and_comment0,
-        tag("<"),
-        skip_space_and_comment0,
-    ))(input)?;
+    let (input, _) = tuple((tag("bitfield"), lparen("<")))(input)?;
 
     let (input, bits) = parse_const_expr(input)?;
     let (input, _) = skip_space_and_comment0(input)?;
@@ -129,11 +110,8 @@ fn parse_bitfield_spec(input: &str) -> PResult<BitfieldSpec> {
         ));
     }
 
-    let (input, destination_type) = delimited(
-        skip_space_and_comment0,
-        parse_destination_type,
-        tuple((skip_space_and_comment0, tag(">"))),
-    )(input)?;
+    let (input, destination_type) =
+        delimited(skip_space_and_comment0, parse_destination_type, rparen(">"))(input)?;
 
     Ok((
         input,
@@ -176,20 +154,12 @@ fn parse_destination_type(input: &str) -> PResult<PrimitiveType> {
 /// (204) <bitmask_dcl> ::= "bitmask" <identifier> "{" <bit_value> { "," <bit_value> }* "}"
 /// ```
 pub fn parse_bitmask_dcl(input: &str) -> PResult<BitmaskDcl> {
-    let (input, (_, _, id, _)) = tuple((
-        tag("bitmask"),
-        skip_space_and_comment0,
-        parse_id,
-        skip_space_and_comment0,
-    ))(input)?;
+    let (input, (_, _, id)) = tuple((tag("bitmask"), skip_space_and_comment1, parse_id))(input)?;
 
     let (input, values) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        separated_list1(
-            tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-            parse_bit_value,
-        ),
-        tuple((skip_space_and_comment0, tag("}"))),
+        lparen("{"),
+        separated_list1(delimiter(","), parse_bit_value),
+        rparen("}"),
     )(input)?;
 
     Ok((input, BitmaskDcl { id, values }))

@@ -30,14 +30,12 @@ pub enum Definition {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ScopedName {
-    pub ids: Vec<String>,
-}
+pub struct ScopedName(pub Vec<String>);
 
 impl ScopedName {
     pub fn to_primitive(&self) -> Option<PrimitiveType> {
-        if self.ids.len() == 1 {
-            PrimitiveType::new(self.ids[0].as_str())
+        if self.0.len() == 1 {
+            PrimitiveType::new(self.0[0].as_str())
         } else {
             None
         }
@@ -318,7 +316,7 @@ pub struct ExceptDcl {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct InterfaceHeader {
     pub id: String,
-    pub parents: Vec<ScopedName>,
+    pub inheritance: Option<Vec<ScopedName>>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -453,8 +451,8 @@ pub enum ValueElement {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct ValueInheritanceSpec {
-    pub value_name: Option<ScopedName>,
-    pub interface_name: Option<ScopedName>,
+    pub value: Option<ScopedName>,
+    pub interface: Option<ScopedName>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -651,13 +649,13 @@ pub enum ActualParameter {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct TemplateModuleInst {
     pub name: ScopedName,
-    pub parameters: Vec<ActualParameter>,
+    pub params: Vec<ActualParameter>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct TemplateModuleRef {
     pub name: ScopedName,
-    pub parameters: Vec<String>,
+    pub params: Vec<String>,
     pub id: String,
 }
 
@@ -670,7 +668,7 @@ pub enum TplDefinition {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct TemplateModuleDcl {
     pub id: String,
-    pub parameters: Vec<FormalParameter>,
+    pub params: Vec<FormalParameter>,
     pub definitions: Vec<TplDefinition>,
 }
 

@@ -1,5 +1,5 @@
 use super::{
-    core::{parse_scoped_name, skip_space_and_comment0},
+    core::{delimiter, lparen, parse_scoped_name, rparen, skip_space_and_comment0},
     PResult,
 };
 use crate::{
@@ -25,23 +25,16 @@ use nom::{
 pub fn parse_template_module_dcl(input: &str) -> PResult<TemplateModuleDcl> {
     let (input, (_, _, id)) = tuple((tag("module"), skip_space_and_comment1, parse_id))(input)?;
 
-    let (input, parameters) = delimited(
-        tuple((skip_space_and_comment0, tag("<"), skip_space_and_comment0)),
-        parse_formal_parameters,
-        tuple((skip_space_and_comment0, tag(">"), skip_space_and_comment0)),
-    )(input)?;
+    let (input, params) = delimited(lparen("<"), parse_formal_parameters, rparen(">"))(input)?;
 
-    let (input, definitions) = delimited(
-        tuple((tag("{"), skip_space_and_comment0)),
-        many1(parse_tpl_definition),
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, definitions) =
+        delimited(lparen("{"), many1(parse_tpl_definition), rparen("}"))(input)?;
 
     Ok((
         input,
         TemplateModuleDcl {
             id,
-            parameters,
+            params,
             definitions,
         },
     ))
@@ -51,10 +44,7 @@ pub fn parse_template_module_dcl(input: &str) -> PResult<TemplateModuleDcl> {
 /// (186) <formal_parameters> ::= <formal_parameter> {"," <formal_parameter>}*
 /// ```
 fn parse_formal_parameters(input: &str) -> PResult<Vec<FormalParameter>> {
-    separated_list1(
-        tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-        parse_formal_parameter,
-    )(input)
+    separated_list1(delimiter(","), parse_formal_parameter)(input)
 }
 
 /// ```text
@@ -139,29 +129,19 @@ fn parse_tpl_definition(input: &str) -> PResult<TplDefinition> {
 /// (190) <template_module_inst> ::= "module" <scoped_name> "<" <actual_parameters> ">" <identifier>
 /// ```
 pub fn parse_template_module_inst(input: &str) -> PResult<TemplateModuleInst> {
-    let (input, name) = delimited(
-        tuple((tag("module"), skip_space_and_comment1)),
-        parse_scoped_name,
-        skip_space_and_comment0,
-    )(input)?;
+    let (input, (_, _, name)) =
+        tuple((tag("module"), skip_space_and_comment1, parse_scoped_name))(input)?;
 
-    let (input, parameters) = delimited(
-        tuple((tag("<"), skip_space_and_comment0)),
-        parse_actual_parameters,
-        tuple((skip_space_and_comment0, tag(">"))),
-    )(input)?;
+    let (input, params) = delimited(lparen("<"), parse_actual_parameters, rparen(">"))(input)?;
 
-    Ok((input, TemplateModuleInst { name, parameters }))
+    Ok((input, TemplateModuleInst { name, params }))
 }
 
 /// ```text
 /// (191) <actual_parameters> ::= <actual_parameter> { "," <actual_parameter> }*
 /// ```
 fn parse_actual_parameters(input: &str) -> PResult<Vec<ActualParameter>> {
-    separated_list1(
-        tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-        parse_actual_parameter,
-    )(input)
+    separated_list1(delimiter(","), parse_actual_parameter)(input)
 }
 
 /// ```text
@@ -186,32 +166,19 @@ fn parse_actual_parameter(input: &str) -> PResult<ActualParameter> {
 /// (193) <template_module_ref> ::= "alias" <scoped_name> "<" <formal_parameter_names> ">" <identifier>
 /// ```
 fn parse_template_module_ref(input: &str) -> PResult<TemplateModuleRef> {
-    let (input, name) = delimited(
-        tuple((tag("alias"), skip_space_and_comment1)),
-        parse_scoped_name,
-        skip_space_and_comment0,
-    )(input)?;
+    let (input, (_, _, name)) =
+        tuple((tag("alias"), skip_space_and_comment1, parse_scoped_name))(input)?;
 
-    let (input, parameters) = parse_formal_parameter_names(input)?;
+    let (input, params) = delimited(lparen("<"), parse_formal_parameter_names, rparen(">"))(input)?;
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, id) = parse_id(input)?;
 
-    Ok((
-        input,
-        TemplateModuleRef {
-            name,
-            parameters,
-            id,
-        },
-    ))
+    Ok((input, TemplateModuleRef { name, params, id }))
 }
 
 /// ```text
 /// (194) <formal_parameter_names> ::= <identifier> {"," <identifier>}*
 /// ```
 fn parse_formal_parameter_names(input: &str) -> PResult<Vec<String>> {
-    separated_list1(
-        tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-        parse_id,
-    )(input)
+    separated_list1(delimiter(","), parse_id)(input)
 }

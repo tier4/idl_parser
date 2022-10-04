@@ -1,7 +1,7 @@
 use super::{
     core::{
-        parse_declarators, parse_id, parse_scoped_name, parse_simple_declarator, parse_type_spec,
-        skip_space_and_comment0, skip_space_and_comment1,
+        lparen, parse_declarators, parse_id, parse_scoped_name, parse_simple_declarator,
+        parse_type_spec, rparen, skip_space_and_comment0, skip_space_and_comment1,
     },
     interfaces::parse_raises_expr,
     PResult,
@@ -11,7 +11,10 @@ use crate::{
         InitDcl, InitParamDcl, ScopedName, StateMember, ValueDcl, ValueDef, ValueElement,
         ValueForwardDcl, ValueHeader, ValueInheritanceSpec, Visibility,
     },
-    parser::interfaces::{parse_export, parse_interface_name},
+    parser::{
+        core::delimiter,
+        interfaces::{parse_export, parse_interface_name},
+    },
 };
 use nom::{
     branch::alt,
@@ -43,9 +46,7 @@ pub fn parse_value_dcl(input: &str) -> PResult<ValueDcl> {
 /// ```
 fn parse_value_def(input: &str) -> PResult<ValueDef> {
     let (input, header) = parse_value_header(input)?;
-    let (input, _) = tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0))(input)?;
-    let (input, elements) = many0(parse_value_element)(input)?;
-    let (input, _) = tuple((skip_space_and_comment0, tag("}")))(input)?;
+    let (input, elements) = delimited(lparen("{"), many0(parse_value_element), rparen("}"))(input)?;
     Ok((input, ValueDef { header, elements }))
 }
 
@@ -70,38 +71,26 @@ fn parse_value_kind(input: &str) -> PResult<&str> {
 /// (103) <value_inheritance_spec> ::= [ ":" <value_name> ] [ "supports" <interface_name> ]
 /// ```
 fn parse_value_inheritance_spec(input: &str) -> PResult<ValueInheritanceSpec> {
-    fn value_name(input: &str) -> PResult<ScopedName> {
-        let (input, _) =
-            tuple((skip_space_and_comment0, tag(":"), skip_space_and_comment0))(input)?;
-        parse_value_name(input)
-    }
-
-    fn supports(input: &str) -> PResult<ScopedName> {
-        let (input, _) = tuple((tag("supports"), skip_space_and_comment0))(input)?;
-        parse_interface_name(input)
-    }
-
-    let (input, value_name) = if let Ok((input, name)) = value_name(input) {
-        (input, Some(name))
+    let (input, value) = if let Ok((input, _)) = delimiter(":")(input) {
+        let (input, value) = parse_value_name(input)?;
+        (input, Some(value))
     } else {
         (input, None)
     };
 
-    let (input, _) = skip_space_and_comment0(input)?;
-
-    let (input, interface_name) = if let Ok((input, name)) = supports(input) {
-        (input, Some(name))
+    let (input, interface) = if let Ok((input, _)) = tuple((
+        skip_space_and_comment1,
+        tag("supports"),
+        skip_space_and_comment0,
+    ))(input)
+    {
+        let (input, interface) = parse_interface_name(input)?;
+        (input, Some(interface))
     } else {
         (input, None)
     };
 
-    Ok((
-        input,
-        ValueInheritanceSpec {
-            value_name,
-            interface_name,
-        },
-    ))
+    Ok((input, ValueInheritanceSpec { value, interface }))
 }
 
 /// ```text
@@ -168,44 +157,28 @@ fn parse_state_member(input: &str) -> PResult<StateMember> {
 
 /// ```text
 /// (107) <init_dcl> ::= "factory" <identifier> "(" [ init_param_dcls ] ")" [ <raises_expr> ] ";"
+/// (108) <init_param_dcls> ::= <init_param_dcl> { "," <init_param_dcl> }*
 /// ```
 fn parse_init_dcl(input: &str) -> PResult<InitDcl> {
     let (input, _) = tuple((tag("factory"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
+    // [ init_param_dcls ]
     let (input, params) = delimited(
-        tuple((skip_space_and_comment0, tag("("), skip_space_and_comment0)),
-        separated_list0(
-            tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-            parse_init_param_dcl,
-        ),
-        tuple((skip_space_and_comment0, tag(")"))),
+        lparen("("),
+        separated_list0(delimiter(","), parse_init_param_dcl),
+        rparen(")"),
     )(input)?;
 
-    if let Ok((input, raises)) = parse_raises_expr(input) {
-        Ok((
-            input,
-            InitDcl {
-                id,
-                params,
-                raises: Some(raises),
-            },
-        ))
+    let (input, raises) = if tuple((skip_space_and_comment0, tag("raises")))(input).is_ok() {
+        let (input, (_, raises)) = tuple((skip_space_and_comment0, parse_raises_expr))(input)?;
+        (input, Some(raises))
     } else {
-        Ok((
-            input,
-            InitDcl {
-                id,
-                params,
-                raises: None,
-            },
-        ))
-    }
-}
+        (input, None)
+    };
 
-// ```text
-// (108) <init_param_dcls> ::= <init_param_dcl> { "," <init_param_dcl> }*
-// ```
+    Ok((input, InitDcl { id, params, raises }))
+}
 
 /// ```text
 /// (109) <init_param_dcl> ::= "in" <type_spec> <simple_declarator>

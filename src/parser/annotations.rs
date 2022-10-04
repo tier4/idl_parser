@@ -1,7 +1,7 @@
 use super::{
     core::{
-        parse_const_expr, parse_const_type, parse_id, parse_scoped_name, parse_simple_declarator,
-        skip_space_and_comment0, skip_space_and_comment1,
+        lparen, parse_const_expr, parse_const_type, parse_id, parse_scoped_name,
+        parse_simple_declarator, rparen, skip_space_and_comment0, skip_space_and_comment1,
     },
     PResult,
 };
@@ -10,7 +10,7 @@ use crate::{
         AnnotationAppl, AnnotationApplParam, AnnotationApplParams, AnnotationBody, AnnotationDcl,
         AnnotationHeader, AnnotationMember, ConstType,
     },
-    parser::core::{parse_const_dcl, parse_enum_dcl, parse_typedef_dcl},
+    parser::core::{delimiter, parse_const_dcl, parse_enum_dcl, parse_typedef_dcl},
 };
 use nom::{
     branch::alt,
@@ -24,11 +24,7 @@ use nom::{
 /// ```
 pub fn parse_annotation_dcl(input: &str) -> PResult<AnnotationDcl> {
     let (input, header) = parse_annotation_header(input)?;
-    let (input, body) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        parse_annotation_body,
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, body) = delimited(lparen("{"), parse_annotation_body, rparen("}"))(input)?;
 
     Ok((input, AnnotationDcl { header, body }))
 }
@@ -126,13 +122,9 @@ fn parse_annotation_member_type(input: &str) -> PResult<ConstType> {
 fn _parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
     let (input, (_, name)) = tuple((tag("@"), parse_scoped_name))(input)?;
 
-    let (input, params) = if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("(")))(input)
-    {
-        let (input, params) = delimited(
-            skip_space_and_comment0,
-            _parse_annotation_appl_params,
-            tuple((skip_space_and_comment0, tag(")"))),
-        )(input)?;
+    let (input, params) = if let Ok((input, _)) = lparen("(")(input) {
+        let (input, params) = _parse_annotation_appl_params(input)?;
+        let (input, _) = rparen(")")(input)?;
         (input, Some(params))
     } else {
         (input, None)
@@ -147,10 +139,7 @@ fn _parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
 /// ```
 fn _parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
     fn appl_params(input: &str) -> PResult<AnnotationApplParams> {
-        let (input, result) = separated_list1(
-            tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-            _parse_annotation_appl_param,
-        )(input)?;
+        let (input, result) = separated_list1(delimiter(","), _parse_annotation_appl_param)(input)?;
         Ok((input, AnnotationApplParams::ApplParams(result)))
     }
 
@@ -167,7 +156,7 @@ fn _parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
 /// ```
 fn _parse_annotation_appl_param(input: &str) -> PResult<AnnotationApplParam> {
     let (input, id) = parse_id(input)?;
-    let (input, _) = tuple((skip_space_and_comment0, tag("="), skip_space_and_comment0))(input)?;
+    let (input, _) = delimiter("=")(input)?;
     let (input, expr) = parse_const_expr(input)?;
     Ok((input, AnnotationApplParam { id, expr }))
 }

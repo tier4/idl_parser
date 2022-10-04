@@ -34,6 +34,22 @@ use nom::{
 use num_bigint::BigInt;
 use num_traits::Zero;
 
+pub fn lparen<'a>(lparen: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str, ())> {
+    tuple((
+        skip_space_and_comment0,
+        tag(lparen),
+        skip_space_and_comment0,
+    ))
+}
+
+pub fn rparen<'a>(rparen: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str)> {
+    tuple((skip_space_and_comment0, tag(rparen)))
+}
+
+pub fn delimiter<'a>(d: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str, ())> {
+    lparen(d)
+}
+
 fn parse_comment(input: &str) -> PResult<&str> {
     let (input, c) = alt((tag("//"), tag("/*")))(input)?;
 
@@ -228,18 +244,9 @@ fn parse_module_dcl(input: &str) -> PResult<Module> {
 ///                     | "::" <identifier>
 ///                     | <scoped_name> "::" <identifier>
 /// ```
-pub fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
-    let mut ids = Vec::new();
-    loop {
-        let (next, id) = parse_id(input)?;
-        ids.push(id);
-
-        if let Ok((next, _)) = tag::<&str, &str, Error<&str>>("::")(next) {
-            input = next;
-        } else {
-            return Ok((next, ScopedName { ids }));
-        }
-    }
+pub fn parse_scoped_name(input: &str) -> PResult<ScopedName> {
+    let (input, ids) = separated_list1(tag("::"), parse_id)(input)?;
+    Ok((input, ScopedName(ids)))
 }
 
 /// ```text
@@ -247,7 +254,7 @@ pub fn parse_scoped_name(mut input: &str) -> PResult<ScopedName> {
 /// ```
 pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
     // "const"
-    let (input, _) = tuple((skip_space_and_comment0, tag("const")))(input)?;
+    let (input, _) = tag("const")(input)?;
 
     // <const_type>
     let (input, _) = skip_space_and_comment1(input)?;
@@ -258,10 +265,9 @@ pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
     let (input, id) = parse_id(input)?;
 
     // "="
-    let (input, _) = tuple((skip_space_and_comment0, tag("=")))(input)?;
+    let (input, _) = delimiter("=")(input)?;
 
     // <const_expr>
-    let (input, _) = skip_space_and_comment0(input)?;
     let (input, expr) = parse_const_expr(input)?;
 
     Ok((
@@ -305,11 +311,11 @@ pub fn parse_const_type(input: &str) -> PResult<ConstType> {
         return Ok((input, ConstType::PrimitiveType(p)));
     }
 
-    if name.ids.len() >= 2 {
+    if name.0.len() >= 2 {
         return Ok((input, ConstType::ScopedName(name)));
     }
 
-    match name.ids[0].as_str() {
+    match name.0[0].as_str() {
         "string" => Ok((input, ConstType::StringType(StringType::UnlimitedSize))),
         "wstring" => Ok((input, ConstType::WStringType(WStringType::UnlimitedSize))),
         "fixed" => Ok((input, ConstType::FixedPointConst)),
@@ -327,12 +333,12 @@ pub fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
 
 /// ```text
 /// (8) <or_expr> ::= <xor_expr>
-///                 | <or_expr> "&" <xor_expr>
+///                 | <or_expr> "|" <xor_expr>
 /// ```
 fn parse_or_expr(input: &str) -> PResult<ConstExpr> {
     let (input, left) = parse_xor_expr(input)?;
 
-    if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("|")))(input) {
+    if let Ok((input, _)) = delimiter("|")(input) {
         let (input, right) = parse_or_expr(input)?;
         Ok((input, ConstExpr::Or(Box::new(left), Box::new(right))))
     } else {
@@ -342,12 +348,12 @@ fn parse_or_expr(input: &str) -> PResult<ConstExpr> {
 
 /// ```text
 /// (9) <xor_expr> ::= <and_expr>
-///                  | <xor_expr> "&" <and_expr>
+///                  | <xor_expr> "^" <and_expr>
 /// ```
 fn parse_xor_expr(input: &str) -> PResult<ConstExpr> {
     let (input, left) = parse_and_expr(input)?;
 
-    if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("^")))(input) {
+    if let Ok((input, _)) = delimiter("^")(input) {
         let (input, right) = parse_xor_expr(input)?;
         Ok((input, ConstExpr::Xor(Box::new(left), Box::new(right))))
     } else {
@@ -362,7 +368,7 @@ fn parse_xor_expr(input: &str) -> PResult<ConstExpr> {
 fn parse_and_expr(input: &str) -> PResult<ConstExpr> {
     let (input, left) = parse_shift_expr(input)?;
 
-    if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("&")))(input) {
+    if let Ok((input, _)) = delimiter("&")(input) {
         let (input, right) = parse_and_expr(input)?;
         Ok((input, ConstExpr::And(Box::new(left), Box::new(right))))
     } else {
@@ -378,9 +384,7 @@ fn parse_and_expr(input: &str) -> PResult<ConstExpr> {
 fn parse_shift_expr(input: &str) -> PResult<ConstExpr> {
     let (input, left) = parse_add_expr(input)?;
 
-    if let Ok((input, (_, op))) =
-        tuple((skip_space_and_comment0, alt((tag(">>"), tag("<<")))))(input)
-    {
+    if let Ok((input, (_, op, _))) = alt((delimiter(">>"), delimiter("<<")))(input) {
         let (input, right) = parse_shift_expr(input)?;
 
         match op {
@@ -401,8 +405,7 @@ fn parse_shift_expr(input: &str) -> PResult<ConstExpr> {
 fn parse_add_expr(input: &str) -> PResult<ConstExpr> {
     let (input, left) = parse_mult_expr(input)?;
 
-    if let Ok((input, (_, op))) = tuple((skip_space_and_comment0, alt((tag("+"), tag("-")))))(input)
-    {
+    if let Ok((input, (_, op, _))) = alt((delimiter("+"), delimiter("-")))(input) {
         let (input, right) = parse_add_expr(input)?;
 
         match op {
@@ -424,9 +427,7 @@ fn parse_add_expr(input: &str) -> PResult<ConstExpr> {
 fn parse_mult_expr(input: &str) -> PResult<ConstExpr> {
     let (input, left) = parse_unary_expr(input)?;
 
-    if let Ok((input, (_, op))) =
-        tuple((skip_space_and_comment0, alt((tag("*"), tag("/"), tag("%")))))(input)
-    {
+    if let Ok((input, (_, op, _))) = alt((delimiter("*"), delimiter("/"), delimiter("%")))(input) {
         let (input, right) = parse_mult_expr(input)?;
 
         match op {
@@ -456,6 +457,7 @@ fn parse_unary_expr(input: &str) -> PResult<ConstExpr> {
         (input, "")
     };
 
+    let (input, _) = skip_space_and_comment0(input)?;
     let (input, expr) = parse_primary_expr(input)?;
 
     let expr = match op {
@@ -485,16 +487,10 @@ fn parse_primary_expr(input: &str) -> PResult<ConstExpr> {
         Ok((input, ConstExpr::ScopedName(name)))
     }
 
-    let (input, _) = skip_space_and_comment0(input)?;
-
     alt((
         expr_literal,
         expr_scoped_name,
-        delimited(
-            tuple((tag("("), skip_space_and_comment0)),
-            parse_const_expr,
-            tuple((skip_space_and_comment0, tag(")"))),
-        ),
+        delimited(lparen("("), parse_const_expr, rparen(")")),
     ))(input)
 }
 
@@ -936,27 +932,21 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
 ///                        | "sequence" "<" <type_spec> ">"
 /// ```
 pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
-    let (input, _) = tag("sequence")(input)?;
-
-    let (input, _) = skip_space_and_comment0(input)?;
+    let (input, _) = tuple((tag("sequence"), lparen("<")))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
 
+    let (input, _) = skip_space_and_comment0(input)?;
     let (input, c) = alt((tag(","), tag(">")))(input)?;
 
     match c {
         "," => {
             let (input, _) = skip_space_and_comment0(input)?;
             let (input, expr) = parse_const_expr(input)?;
-
-            let (input, _) = skip_space_and_comment0(input)?;
-            let (input, _) = tag(">")(input)?;
-
+            let (input, _) = rparen(">")(input)?;
             Ok((input, SequenceType::Limited(type_spec, expr)))
         }
         ">" => {
-            let (input, _) = skip_space_and_comment0(input)?;
-            let (input, _) = tag(">")(input)?;
-
+            let (input, _) = rparen(">")(input)?;
             Ok((input, SequenceType::Unlimited(type_spec)))
         }
         _ => unreachable!(),
@@ -967,11 +957,7 @@ pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
 /// "<" <positive_int_const> ">"
 /// ```
 fn parse_max_size(input: &str) -> PResult<ConstExpr> {
-    delimited(
-        tuple((skip_space_and_comment0, tag("<"), skip_space_and_comment0)),
-        parse_const_expr,
-        tuple((skip_space_and_comment0, tag(">"))),
-    )(input)
+    delimited(lparen("<"), parse_const_expr, rparen(">"))(input)
 }
 
 /// ```text
@@ -1002,20 +988,15 @@ fn parse_wide_string_type(input: &str) -> PResult<WStringType> {
 /// (42) <fixed_pt_type> ::= "fixed" "<" <positive_int_const> "," <positive_int_const> ">"
 /// ```
 fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
-    let (input, _) = tuple((
-        tag("fixed"),
-        skip_space_and_comment0,
-        tag("<"),
-        skip_space_and_comment0,
-    ))(input)?;
+    let (input, _) = tuple((tag("fixed"), lparen("<")))(input)?;
 
     let (input, total_digits) = parse_const_expr(input)?;
 
-    let (input, _) = tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0))(input)?;
+    let (input, _) = delimiter(",")(input)?;
 
     let (input, fractional_digits) = parse_const_expr(input)?;
 
-    let (input, _) = tuple((skip_space_and_comment0, tag(">")))(input)?;
+    let (input, _) = rparen(">")(input)?;
 
     Ok((
         input,
@@ -1109,11 +1090,7 @@ fn parse_struct_def(input: &str) -> PResult<StructDef> {
     };
 
     // "{" <member>* "}"
-    let (input, members) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        many0(parse_member),
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, members) = delimited(lparen("{"), many0(parse_member), rparen("}"))(input)?;
 
     Ok((
         input,
@@ -1191,18 +1168,11 @@ fn parse_union_def(input: &str) -> PResult<UnionDef> {
     let (input, _) = tuple((skip_space_and_comment1, tag("switch")))(input)?;
 
     // "(" <switch_type_spec> ")"
-    let (input, switch_type_spec) = delimited(
-        tuple((skip_space_and_comment0, tag("("), skip_space_and_comment0)),
-        parse_switch_type_spec,
-        tuple((skip_space_and_comment0, tag(")"))),
-    )(input)?;
+    let (input, switch_type_spec) =
+        delimited(lparen("("), parse_switch_type_spec, rparen(")"))(input)?;
 
     // "{" <switch_body> "}"
-    let (input, body) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        parse_switch_body,
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, body) = delimited(lparen("{"), parse_switch_body, rparen("}"))(input)?;
 
     Ok((
         input,
@@ -1230,11 +1200,11 @@ fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
 
     let (input, name) = parse_scoped_name(input)?;
 
-    if name.ids.len() >= 2 {
+    if name.0.len() >= 2 {
         return Ok((input, SwitchTypeSpec::ScopedName(name)));
     }
 
-    match name.ids[0].as_str() {
+    match name.0[0].as_str() {
         "short" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Short))),
         "long" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Long))),
         "char" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Char))),
@@ -1268,6 +1238,8 @@ fn parse_case(input: &str) -> PResult<Case> {
 
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, spec) = parse_element_spec(input)?;
+
+    let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, Case { labels, spec }))
 }
@@ -1341,12 +1313,9 @@ pub fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
 
     // "{" <enumerator> { "," <enumerator> }* "}"
     let (input, variants) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        separated_list1(
-            tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-            parse_enumerator,
-        ),
-        tuple((skip_space_and_comment0, tag("}"))),
+        lparen("{"),
+        separated_list1(delimiter(","), parse_enumerator),
+        rparen("}"),
     )(input)?;
 
     Ok((input, EnumDcl { id, variants }))
@@ -1363,11 +1332,7 @@ fn parse_enumerator(input: &str) -> PResult<String> {
 /// (60) <fixed_array_size> ::= "[" <positive_int_const> "]"
 /// ```
 fn parse_fixed_array_size(input: &str) -> PResult<ConstExpr> {
-    delimited(
-        tuple((skip_space_and_comment0, tag("["), skip_space_and_comment0)),
-        parse_const_expr,
-        tuple((skip_space_and_comment0, tag("]"))),
-    )(input)
+    delimited(lparen("["), parse_const_expr, rparen("]"))(input)
 }
 
 /// ```text
@@ -1421,7 +1386,7 @@ fn parse_type_declarator(input: &str) -> PResult<Typedef> {
     let (input, _) = skip_space_and_comment1(input)?;
 
     // <any_declalators>
-    let (input, declarators) = separated_list1(tag(","), parse_any_declarator)(input)?;
+    let (input, declarators) = separated_list1(delimiter(","), parse_any_declarator)(input)?;
 
     Ok((
         input,
@@ -1456,10 +1421,7 @@ fn parse_any_declarator(input: &str) -> PResult<AnyDeclarator> {
 /// (67) <declarators> ::= <declarator> { "," <declarator> }*
 /// ```
 pub fn parse_declarators(input: &str) -> PResult<Vec<AnyDeclarator>> {
-    separated_list1(
-        tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-        parse_declarator,
-    )(input)
+    separated_list1(delimiter(","), parse_declarator)(input)
 }
 
 /// ```text

@@ -1,7 +1,7 @@
 use super::{
     core::{
-        parse_id, parse_scoped_name, parse_simple_declarator, parse_type_spec,
-        skip_space_and_comment0, skip_space_and_comment1,
+        delimiter, lparen, parse_id, parse_scoped_name, parse_simple_declarator, parse_type_spec,
+        rparen, skip_space_and_comment0, skip_space_and_comment1,
     },
     interfaces::{parse_export, parse_raises_expr},
     PResult,
@@ -56,11 +56,7 @@ fn parse_component_forward_dcl(input: &str) -> PResult<ComponentForwardDcl> {
 fn parse_component_def(input: &str) -> PResult<ComponentDef> {
     let (input, header) = parse_component_header(input)?;
 
-    let (input, body) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        parse_componet_body,
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, body) = delimited(lparen("{"), parse_componet_body, rparen("}"))(input)?;
 
     Ok((input, ComponentDef { header, body }))
 }
@@ -72,9 +68,9 @@ fn parse_component_header(input: &str) -> PResult<ComponentHeader> {
     let (input, _) = tuple((tag("component"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
-    let (input, inheritance) = if let Ok((input, (_, result))) =
-        tuple((skip_space_and_comment0, parse_component_inheritance_spec))(input)
-    {
+    let (input, inheritance) = if tuple((skip_space_and_comment0, tag(":")))(input).is_ok() {
+        let (input, (_, result)) =
+            tuple((skip_space_and_comment0, parse_component_inheritance_spec))(input)?;
         (input, Some(result))
     } else {
         (input, None)
@@ -109,30 +105,29 @@ fn parse_componet_body(input: &str) -> PResult<Vec<ComponentExport>> {
 fn parse_compoent_export(input: &str) -> PResult<ComponentExport> {
     fn provides(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_provides_dcl(input)?;
-        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, ComponentExport::Provides(result)))
     }
 
     fn uses(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_uses_dcl(input)?;
-        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, ComponentExport::Uses(result)))
     }
 
     fn attr(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_attr_dcl(input)?;
-        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, ComponentExport::Attr(result)))
     }
 
     fn port(input: &str) -> PResult<ComponentExport> {
         let (input, result) = parse_port_dcl(input)?;
-        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, ComponentExport::Port(result)))
     }
 
     let (input, _) = skip_space_and_comment0(input)?;
-    alt((provides, uses, attr, port))(input)
+    let (input, result) = alt((provides, uses, attr, port))(input)?;
+    let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+
+    Ok((input, result))
 }
 
 /// ```text
@@ -175,11 +170,7 @@ fn parse_uses_dcl(input: &str) -> PResult<UsesDcl> {
 pub fn parse_home_dcl(input: &str) -> PResult<HomeDcl> {
     let (input, header) = parse_home_header(input)?;
 
-    let (input, body) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        parse_home_body,
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, body) = delimited(lparen("{"), parse_home_body, rparen("}"))(input)?;
 
     Ok((input, HomeDcl { header, body }))
 }
@@ -192,9 +183,9 @@ fn parse_home_header(input: &str) -> PResult<HomeHeader> {
 
     let (input, id) = parse_id(input)?;
 
-    let (input, inheritance) = if let Ok((input, (_, result))) =
-        tuple((skip_space_and_comment0, parse_home_inheritance_spec))(input)
-    {
+    let (input, inheritance) = if tuple((skip_space_and_comment0, tag(":")))(input).is_ok() {
+        let (input, (_, result)) =
+            tuple((skip_space_and_comment0, parse_home_inheritance_spec))(input)?;
         (input, Some(result))
     } else {
         (input, None)
@@ -246,6 +237,7 @@ fn parse_home_export(input: &str) -> PResult<HomeExport> {
 
     fn factory_dcl(input: &str) -> PResult<HomeExport> {
         let (input, result) = parse_factory_dcl(input)?;
+        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, HomeExport::FactoryDcl(result)))
     }
 
@@ -262,15 +254,13 @@ fn parse_factory_dcl(input: &str) -> PResult<FactoryDcl> {
     let (input, id) = parse_simple_declarator(input)?;
 
     let (input, params) = delimited(
-        tuple((skip_space_and_comment0, tag("("), skip_space_and_comment0)),
-        separated_list0(
-            tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
-            parse_factory_param_dcl,
-        ),
-        tuple((skip_space_and_comment0, tag(")"))),
+        lparen("("),
+        separated_list0(delimiter(","), parse_factory_param_dcl),
+        rparen(")"),
     )(input)?;
 
-    let (input, raises) = if let Ok((input, raises)) = parse_raises_expr(input) {
+    let (input, raises) = if tuple((skip_space_and_comment0, tag("raises")))(input).is_ok() {
+        let (input, (_, raises)) = tuple((skip_space_and_comment0, parse_raises_expr))(input)?;
         (input, Some(raises))
     } else {
         (input, None)
@@ -289,6 +279,7 @@ fn parse_factory_dcl(input: &str) -> PResult<FactoryDcl> {
 fn parse_factory_param_dcl(input: &str) -> PResult<FactoryParamDcl> {
     let (input, _) = tuple((tag("in"), skip_space_and_comment1))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
+    let (input, _) = skip_space_and_comment1(input)?;
     let (input, id) = parse_simple_declarator(input)?;
     Ok((input, FactoryParamDcl { type_spec, id }))
 }
@@ -315,7 +306,7 @@ pub fn parse_porttype_dcl(input: &str) -> PResult<PortTypeDcl> {
 /// (173) <porttype_forward_dcl> ::= "porttype" <identifier>
 /// ```
 fn parse_porttype_forward_dcl(input: &str) -> PResult<PortTypeForwardDcl> {
-    let (input, id) = parse_id(input)?;
+    let (input, (_, _, id)) = tuple((tag("porttype"), skip_space_and_comment1, parse_id))(input)?;
     Ok((input, PortTypeForwardDcl(id)))
 }
 
@@ -324,13 +315,7 @@ fn parse_porttype_forward_dcl(input: &str) -> PResult<PortTypeForwardDcl> {
 /// ```
 fn parse_porttype_def(input: &str) -> PResult<PortTypeDef> {
     let (input, (_, _, id)) = tuple((tag("porttype"), skip_space_and_comment1, parse_id))(input)?;
-
-    let (input, body) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        parse_port_body,
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
-
+    let (input, body) = delimited(lparen("{"), parse_port_body, rparen("}"))(input)?;
     Ok((input, PortTypeDef { id, body }))
 }
 
@@ -420,11 +405,8 @@ fn parse_port_dcl(input: &str) -> PResult<PortDcl> {
 /// ```
 pub fn parse_connector_dcl(input: &str) -> PResult<ConnectorDcl> {
     let (input, header) = parse_connector_header(input)?;
-    let (input, export) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        many1(parse_connector_export),
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, export) =
+        delimited(lparen("{"), many1(parse_connector_export), rparen("}"))(input)?;
 
     Ok((input, ConnectorDcl { header, export }))
 }
@@ -435,30 +417,22 @@ pub fn parse_connector_dcl(input: &str) -> PResult<ConnectorDcl> {
 fn parse_connector_header(input: &str) -> PResult<ConnectorHeader> {
     let (input, (_, _, id)) = tuple((tag("connector"), skip_space_and_comment1, parse_id))(input)?;
 
-    if let Ok((input, inheritance)) = parse_connector_inherit_spec(input) {
-        Ok((
-            input,
-            ConnectorHeader {
-                id,
-                inheritance: Some(inheritance),
-            },
-        ))
+    let (input, inheritance) = if tuple((skip_space_and_comment0, tag(":")))(input).is_ok() {
+        let (input, (_, result)) =
+            tuple((skip_space_and_comment0, parse_connector_inherit_spec))(input)?;
+        (input, Some(result))
     } else {
-        Ok((
-            input,
-            ConnectorHeader {
-                id,
-                inheritance: None,
-            },
-        ))
-    }
+        (input, None)
+    };
+
+    Ok((input, ConnectorHeader { id, inheritance }))
 }
 
 /// ```text
 /// (182) <connector_inherit_spec> ::= ":" <scoped_name>
 /// ```
 fn parse_connector_inherit_spec(input: &str) -> PResult<ConnectorInheritSpec> {
-    let (input, _) = tuple((skip_space_and_comment0, tag(":"), skip_space_and_comment0))(input)?;
+    let (input, _) = delimiter(":")(input)?;
     let (input, name) = parse_scoped_name(input)?;
     Ok((input, ConnectorInheritSpec(name)))
 }
@@ -475,6 +449,7 @@ fn parse_connector_export(input: &str) -> PResult<ConnectorExport> {
 
     fn attr(input: &str) -> PResult<ConnectorExport> {
         let (input, result) = parse_attr_dcl(input)?;
+        let (input, _) = tuple((skip_space_and_comment0, tag(":")))(input)?;
         Ok((input, ConnectorExport::Attr(result)))
     }
 
