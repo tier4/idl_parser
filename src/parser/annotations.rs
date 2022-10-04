@@ -118,7 +118,7 @@ fn parse_annotation_member_type(input: &str) -> PResult<ConstType> {
 /// (225) <annotation_appl> ::= "@" <scoped_name> [ "(" <annotation_appl_params> ")" ]
 /// ```
 ///
-/// `<annotation_appl>` is never used because of the specification; OMG IDL 4.2
+/// `<annotation_appl>` is never used in the specification; OMG IDL 4.2.
 fn parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
     let (input, (_, name)) = tuple((tag("@"), parse_scoped_name))(input)?;
 

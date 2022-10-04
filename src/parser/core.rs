@@ -1,4 +1,4 @@
-use super::PResult;
+use super::{annotations::parse_annotation_apps, PResult};
 use crate::{
     character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
     expr::{
@@ -199,24 +199,60 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Annotation(def)))
     }
 
-    let (input, def) = alt((
-        module,
-        const_dcl,
-        type_dcl,
-        except_dcl,
-        interface_dcl,
-        value_dcl,
-        component_dcl,
-        home_dcl,
-        port_type_dcl,
-        connector_dcl,
-        template_module_dcl,
-        template_module_inst,
-        annotation_dcl,
+    let (input, _) = skip_space_and_comment0(input)?;
+
+    let (input, _annotation) = if tag::<&str, &str, Error<&str>>("@")(input).is_ok() {
+        if tuple((tag("annotation"), skip_space_and_comment1))(input).is_ok() {
+            let (input, result) = annotation_dcl(input)?;
+            let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+            return Ok((input, result));
+        } else {
+            let (input, annotation) = parse_annotation_apps(input)?;
+            (input, Some(annotation))
+        }
+    } else {
+        (input, None)
+    };
+    let (input, _) = skip_space_and_comment0(input)?;
+
+    let (_, s) = alt((
+        tag("module"),
+        tag("const"),
+        tag("struct"),
+        tag("enum"),
+        tag("union"),
+        tag("native"),
+        tag("bitset"),
+        tag("bitmask"),
+        tag("typedef"),
+        tag("except"),
+        tag("interface"),
+        tag("valuetype"),
+        tag("component"),
+        tag("home"),
+        tag("porttype"),
+        tag("connector"),
     ))(input)?;
+
+    let (input, result) = match s {
+        "module" => alt((module, template_module_dcl, template_module_inst))(input)?,
+        "const" => const_dcl(input)?,
+        "struct" | "enum" | "union" | "bitmask" | "bitset" | "typedef" | "native" => {
+            type_dcl(input)?
+        }
+        "except" => except_dcl(input)?,
+        "interface" => interface_dcl(input)?,
+        "valuetype" => value_dcl(input)?,
+        "component" => component_dcl(input)?,
+        "home" => home_dcl(input)?,
+        "porttype" => port_type_dcl(input)?,
+        "connector" => connector_dcl(input)?,
+        _ => unreachable!(),
+    };
+
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
-    Ok((input, def))
+    Ok((input, result))
 }
 
 /// ```text
@@ -955,24 +991,30 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
 ///                        | "sequence" "<" <type_spec> ">"
 /// ```
 pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
+    println!("seq 0");
     let (input, _) = tuple((tag("sequence"), lparen("<")))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
+    println!("seq 1");
 
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, c) = alt((tag(","), tag(">")))(input)?;
+    println!("seq 2");
 
     match c {
         "," => {
+            println!("seq 5");
             let (input, _) = skip_space_and_comment0(input)?;
             let (input, expr) = parse_const_expr(input)?;
             let (input, _) = rparen(">")(input)?;
+
+            println!("seq 6");
             Ok((input, SequenceType::Limited(type_spec, expr)))
         }
-        ">" => {
-            let (input, _) = rparen(">")(input)?;
-            Ok((input, SequenceType::Unlimited(type_spec)))
+        ">" => Ok((input, SequenceType::Unlimited(type_spec))),
+        _ => {
+            println!("seq 7");
+            unreachable!()
         }
-        _ => unreachable!(),
     }
 }
 
