@@ -51,12 +51,14 @@ fn parse_annotation_body(input: &str) -> PResult<Vec<AnnotationBody>> {
     }
 
     fn enum_dcl(input: &str) -> PResult<AnnotationBody> {
+        let (input, _) = tuple((tag("enum"), skip_space_and_comment1))(input)?;
         let (input, result) = parse_enum_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, AnnotationBody::Enum(result)))
     }
 
     fn const_dcl(input: &str) -> PResult<AnnotationBody> {
+        let (input, _) = tuple((tag("const"), skip_space_and_comment1))(input)?;
         let (input, result) = parse_const_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, AnnotationBody::Const(result)))

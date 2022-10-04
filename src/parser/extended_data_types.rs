@@ -57,12 +57,7 @@ pub fn parse_map_type(input: &str) -> PResult<MapType> {
 /// (200) <bitset_dcl> ::= "bitset" <identifier> [":" <scoped_name> ] "{" <bitfield>* "}"
 /// ```
 pub fn parse_bitset_dcl(input: &str) -> PResult<BitsetDcl> {
-    let (input, (_, _, id, _)) = tuple((
-        tag("bitset"),
-        skip_space_and_comment1,
-        parse_id,
-        skip_space_and_comment0,
-    ))(input)?;
+    let (input, (id, _)) = tuple((parse_id, skip_space_and_comment0))(input)?;
 
     let (input, name) = if let Ok((input, _)) = tag::<&str, &str, Error<&str>>(":")(input) {
         let (input, (_, name)) = tuple((skip_space_and_comment0, parse_scoped_name))(input)?;
@@ -154,7 +149,7 @@ fn parse_destination_type(input: &str) -> PResult<PrimitiveType> {
 /// (204) <bitmask_dcl> ::= "bitmask" <identifier> "{" <bit_value> { "," <bit_value> }* "}"
 /// ```
 pub fn parse_bitmask_dcl(input: &str) -> PResult<BitmaskDcl> {
-    let (input, (_, _, id)) = tuple((tag("bitmask"), skip_space_and_comment1, parse_id))(input)?;
+    let (input, id) = parse_id(input)?;
 
     let (input, values) = delimited(
         lparen("{"),

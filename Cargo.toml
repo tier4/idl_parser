@@ -7,5 +7,7 @@ edition = "2021"
 
 [dependencies]
 nom = "7.1"
+nom-greedyerror = "0.4"
+nom_locate = "4.0"
 num-bigint = "0.4"
 num-traits = "0.2"

@@ -25,7 +25,6 @@ use std::mem::take;
 /// (72) <except_dcl> ::= "exception" <identifier> "{" <member>*  "}"
 /// ```
 pub fn parse_except_dcl(input: &str) -> PResult<ExceptDcl> {
-    let (input, _) = tuple((tag("exception"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     let (input, members) = delimited(lparen("{"), many1(parse_member), rparen("}"))(input)?;
@@ -66,7 +65,6 @@ fn parse_interface_def(input: &str) -> PResult<InterfaceDef> {
 /// (75) <interface_forward_dcl> ::= <interface_kind> <identifier>
 /// ```
 fn parse_interface_forward_dcl(input: &str) -> PResult<InterfaceForwardDcl> {
-    let (input, _) = tuple((parse_interface_kind, skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
     Ok((input, InterfaceForwardDcl(id)))
 }
@@ -76,7 +74,6 @@ fn parse_interface_forward_dcl(input: &str) -> PResult<InterfaceForwardDcl> {
 /// (78) <interface_inheritance_spec> ::= ":" <interface_name> { "," <interface_name> }*
 /// ```
 fn parse_interface_header(input: &str) -> PResult<InterfaceHeader> {
-    let (input, _) = tuple((parse_interface_kind, skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     let (input, inheritance) = if let Ok((input, _)) =
@@ -131,8 +128,8 @@ pub fn parse_export(input: &str) -> PResult<Export> {
         Ok((input, Export::Attr(attr)))
     }
 
-    fn type_dcl(input: &str) -> PResult<Export> {
-        let (input, dcl) = parse_type_dcl(input)?;
+    fn type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, Export> {
+        let (input, dcl) = parse_type_dcl(head, input)?;
         Ok((input, Export::Type(dcl)))
     }
 
@@ -146,11 +143,34 @@ pub fn parse_export(input: &str) -> PResult<Export> {
         Ok((input, Export::Except(dcl)))
     }
 
-    let (input, _) = skip_space_and_comment0(input)?;
-    let (input, result) = alt((op, attr, type_dcl, const_dcl, except))(input)?;
-    let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
-
-    Ok((input, result))
+    if let Ok((input, (head, _))) = tuple((
+        alt((
+            tag("struct"),
+            tag("enum"),
+            tag("union"),
+            tag("bitset"),
+            tag("bitmask"),
+            tag("native"),
+            tag("typedef"),
+            tag("const"),
+            tag("exception"),
+        )),
+        skip_space_and_comment1,
+    ))(input)
+    {
+        let (input, result) = match head {
+            "const" => const_dcl(input)?,
+            "except" => except(input)?,
+            _ => type_dcl(head, input)?,
+        };
+        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+        Ok((input, result))
+    } else {
+        let (input, _) = skip_space_and_comment0(input)?;
+        let (input, result) = alt((op, attr))(input)?;
+        let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
+        Ok((input, result))
+    }
 }
 
 /// ```text

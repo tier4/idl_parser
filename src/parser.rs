@@ -49,6 +49,7 @@ mod tests {
 
 
 module example_msg {
+  typedef int32 int32__10[10];
   module msg {
     struct Buz {
       string c;

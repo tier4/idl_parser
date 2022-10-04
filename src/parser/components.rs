@@ -65,7 +65,6 @@ fn parse_component_def(input: &str) -> PResult<ComponentDef> {
 /// (137) <component_header> ::= "component" <identifier> [ <component_inheritance_spec> ]
 /// ```
 fn parse_component_header(input: &str) -> PResult<ComponentHeader> {
-    let (input, _) = tuple((tag("component"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     let (input, inheritance) = if tuple((skip_space_and_comment0, tag(":")))(input).is_ok() {
@@ -179,8 +178,6 @@ pub fn parse_home_dcl(input: &str) -> PResult<HomeDcl> {
 /// (146) <home_header> ::= "home" <identifier> [ <home_inheritance_spec> ] "manages" <scoped_name>
 /// ```
 fn parse_home_header(input: &str) -> PResult<HomeHeader> {
-    let (input, _) = tuple((tag("home"), skip_space_and_comment1))(input)?;
-
     let (input, id) = parse_id(input)?;
 
     let (input, inheritance) = if tuple((skip_space_and_comment0, tag(":")))(input).is_ok() {
@@ -306,7 +303,7 @@ pub fn parse_porttype_dcl(input: &str) -> PResult<PortTypeDcl> {
 /// (173) <porttype_forward_dcl> ::= "porttype" <identifier>
 /// ```
 fn parse_porttype_forward_dcl(input: &str) -> PResult<PortTypeForwardDcl> {
-    let (input, (_, _, id)) = tuple((tag("porttype"), skip_space_and_comment1, parse_id))(input)?;
+    let (input, id) = parse_id(input)?;
     Ok((input, PortTypeForwardDcl(id)))
 }
 
@@ -314,7 +311,7 @@ fn parse_porttype_forward_dcl(input: &str) -> PResult<PortTypeForwardDcl> {
 /// (174) <porttype_def> ::= "porttype" <identifier> "{" <port_body> "}"
 /// ```
 fn parse_porttype_def(input: &str) -> PResult<PortTypeDef> {
-    let (input, (_, _, id)) = tuple((tag("porttype"), skip_space_and_comment1, parse_id))(input)?;
+    let (input, id) = parse_id(input)?;
     let (input, body) = delimited(lparen("{"), parse_port_body, rparen("}"))(input)?;
     Ok((input, PortTypeDef { id, body }))
 }
@@ -415,7 +412,7 @@ pub fn parse_connector_dcl(input: &str) -> PResult<ConnectorDcl> {
 /// (181) <connector_header> ::= "connector" <identifier> [ <connector_inherit_spec> ]
 /// ```
 fn parse_connector_header(input: &str) -> PResult<ConnectorHeader> {
-    let (input, (_, _, id)) = tuple((tag("connector"), skip_space_and_comment1, parse_id))(input)?;
+    let (input, id) = parse_id(input)?;
 
     let (input, inheritance) = if tuple((skip_space_and_comment0, tag(":")))(input).is_ok() {
         let (input, (_, result)) =

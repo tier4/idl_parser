@@ -54,7 +54,6 @@ fn parse_value_def(input: &str) -> PResult<ValueDef> {
 /// (101) <value_header> ::= <value_kind> <identifier> [ <value_inheritance_spec> ]
 /// ```
 fn parse_value_header(input: &str) -> PResult<ValueHeader> {
-    let (input, _) = tuple((parse_value_kind, skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
     let (input, inheritance) = parse_value_inheritance_spec(input)?;
     Ok((input, ValueHeader { id, inheritance }))
@@ -201,7 +200,6 @@ fn parse_init_param_dcl(input: &str) -> PResult<InitParamDcl> {
 /// (110) <value_forward_dcl> ::= <value_kind> <identifier>
 /// ```
 fn parse_value_forward_dcl(input: &str) -> PResult<ValueForwardDcl> {
-    let (input, _) = tuple((parse_value_kind, skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
     Ok((input, ValueForwardDcl(id)))
 }

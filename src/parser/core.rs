@@ -144,8 +144,8 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         Ok((input, Definition::Const(def)))
     }
 
-    fn type_dcl(input: &str) -> PResult<Definition> {
-        let (input, def) = parse_type_dcl(input)?;
+    fn type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, Definition> {
+        let (input, def) = parse_type_dcl(head, input)?;
         Ok((input, Definition::Type(def)))
     }
 
@@ -213,34 +213,38 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
     } else {
         (input, None)
     };
+
     let (input, _) = skip_space_and_comment0(input)?;
 
-    let (_, s) = alt((
-        tag("module"),
-        tag("const"),
-        tag("struct"),
-        tag("enum"),
-        tag("union"),
-        tag("native"),
-        tag("bitset"),
-        tag("bitmask"),
-        tag("typedef"),
-        tag("except"),
-        tag("interface"),
-        tag("valuetype"),
-        tag("component"),
-        tag("home"),
-        tag("porttype"),
-        tag("connector"),
+    let (input, (head, _)) = tuple((
+        alt((
+            tag("module"),
+            tag("const"),
+            tag("struct"),
+            tag("enum"),
+            tag("union"),
+            tag("native"),
+            tag("bitset"),
+            tag("bitmask"),
+            tag("typedef"),
+            tag("exception"),
+            tag("interface"),
+            tag("valuetype"),
+            tag("component"),
+            tag("home"),
+            tag("porttype"),
+            tag("connector"),
+        )),
+        skip_space_and_comment1,
     ))(input)?;
 
-    let (input, result) = match s {
+    let (input, result) = match head {
         "module" => alt((module, template_module_dcl, template_module_inst))(input)?,
         "const" => const_dcl(input)?,
         "struct" | "enum" | "union" | "bitmask" | "bitset" | "typedef" | "native" => {
-            type_dcl(input)?
+            type_dcl(head, input)?
         }
-        "except" => except_dcl(input)?,
+        "exception" => except_dcl(input)?,
         "interface" => interface_dcl(input)?,
         "valuetype" => value_dcl(input)?,
         "component" => component_dcl(input)?,
@@ -259,9 +263,6 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
 /// (3) <module_dcl> ::= "module" <identifier> "{" <definition>+ "}"
 /// ```
 fn parse_module_dcl(input: &str) -> PResult<Module> {
-    let (input, _) = tag("module")(input)?;
-    let (input, _) = skip_space_and_comment1(input)?;
-
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -294,11 +295,7 @@ pub fn parse_scoped_name(input: &str) -> PResult<ScopedName> {
 /// (5) <const_dcl> ::= "const" <const_type> <identifier> "=" <const_expr>
 /// ```
 pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
-    // "const"
-    let (input, _) = tag("const")(input)?;
-
     // <const_type>
-    let (input, _) = skip_space_and_comment1(input)?;
     let (input, const_type) = parse_const_type(input)?;
 
     // <identifier>
@@ -797,9 +794,9 @@ fn parse_char_escape(input: &str) -> PResult<char> {
 ///                   | <native_dcl>
 ///                   | <typedef_dcl>
 /// ```
-pub fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
-    fn constr_type(input: &str) -> PResult<TypeDcl> {
-        let (input, dcl) = parse_constr_type_dcl(input)?;
+pub fn parse_type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, TypeDcl> {
+    fn constr_type<'a>(head: &str, input: &'a str) -> PResult<'a, TypeDcl> {
+        let (input, dcl) = parse_constr_type_dcl(head, input)?;
         Ok((input, TypeDcl::ConstrType(dcl)))
     }
 
@@ -813,7 +810,12 @@ pub fn parse_type_dcl(input: &str) -> PResult<TypeDcl> {
         Ok((input, TypeDcl::Typedef(dcl)))
     }
 
-    alt((constr_type, native, typedef))(input)
+    match head {
+        "struct" | "enum" | "union" | "bitmask" | "bitset" => constr_type(head, input),
+        "native" => native(input),
+        "typedef" => typedef(input),
+        _ => unreachable!(),
+    }
 }
 
 /// ```text
@@ -991,28 +993,21 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
 ///                        | "sequence" "<" <type_spec> ">"
 /// ```
 pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
-    println!("seq 0");
     let (input, _) = tuple((tag("sequence"), lparen("<")))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
-    println!("seq 1");
 
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, c) = alt((tag(","), tag(">")))(input)?;
-    println!("seq 2");
 
     match c {
         "," => {
-            println!("seq 5");
             let (input, _) = skip_space_and_comment0(input)?;
             let (input, expr) = parse_const_expr(input)?;
             let (input, _) = rparen(">")(input)?;
-
-            println!("seq 6");
             Ok((input, SequenceType::Limited(type_spec, expr)))
         }
         ">" => Ok((input, SequenceType::Unlimited(type_spec))),
         _ => {
-            println!("seq 7");
             unreachable!()
         }
     }
@@ -1084,7 +1079,7 @@ fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
 /// (198) <constr_type_dcl> ::+ <bitset_dcl>
 ///                           | <bitmask_dcl>
 /// ```
-fn parse_constr_type_dcl(input: &str) -> PResult<ConstrTypeDcl> {
+fn parse_constr_type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, ConstrTypeDcl> {
     fn struct_type(input: &str) -> PResult<ConstrTypeDcl> {
         let (input, t) = parse_struct_dcl(input)?;
         Ok((input, ConstrTypeDcl::Struct(t)))
@@ -1110,7 +1105,14 @@ fn parse_constr_type_dcl(input: &str) -> PResult<ConstrTypeDcl> {
         Ok((input, ConstrTypeDcl::Bitmask(t)))
     }
 
-    alt((struct_type, enum_type, union_type, bitset, bitmask))(input)
+    match head {
+        "struct" => struct_type(input),
+        "union" => union_type(input),
+        "enum" => enum_type(input),
+        "bitset" => bitset(input),
+        "bitmask" => bitmask(input),
+        _ => unreachable!(),
+    }
 }
 
 /// ```text
@@ -1139,9 +1141,6 @@ fn parse_struct_dcl(input: &str) -> PResult<StructDcl> {
 ///                      | "struct" <identifier> "{" "}"
 /// ```
 fn parse_struct_def(input: &str) -> PResult<StructDef> {
-    // "struct"
-    let (input, _) = tuple((tag("struct"), skip_space_and_comment1))(input)?;
-
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -1171,8 +1170,16 @@ fn parse_struct_def(input: &str) -> PResult<StructDef> {
 /// (47) <member> ::= <type_spec> <declarators> ";"
 /// ```
 pub fn parse_member(input: &str) -> PResult<Member> {
-    // <type_spec>
     let (input, _) = skip_space_and_comment0(input)?;
+
+    let (input, _annotation) = if tag::<&str, &str, Error<&str>>("@")(input).is_ok() {
+        let (input, annotation) = parse_annotation_apps(input)?;
+        (input, Some(annotation))
+    } else {
+        (input, None)
+    };
+
+    // <type_spec>
     let (input, type_spec) = parse_type_spec(input)?;
 
     // <declarators>
@@ -1195,7 +1202,6 @@ pub fn parse_member(input: &str) -> PResult<Member> {
 /// (48) <struct_forward_dcl> ::= "struct" <identifier>
 /// ```
 fn parse_struct_forward_dcl(input: &str) -> PResult<StructForwardDcl> {
-    let (input, _) = tuple((tag("struct"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     Ok((input, StructForwardDcl(id)))
@@ -1223,9 +1229,6 @@ fn parse_union_dcl(input: &str) -> PResult<UnionDcl> {
 /// (50) <union_def> ::= "union" <identifier> "switch" "(" <switch_type_spec> ")" "{" <switch_body> "}"
 /// ```
 fn parse_union_def(input: &str) -> PResult<UnionDef> {
-    // "union"
-    let (input, _) = tuple((tag("union"), skip_space_and_comment1))(input)?;
-
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -1359,8 +1362,6 @@ fn parse_element_spec(input: &str) -> PResult<ElementSpec> {
 /// (56) <union_forward_dcl> ::= "union" <identifier>
 /// ```
 fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
-    // "union"
-    let (input, _) = tuple((tag("union"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_id(input)?;
 
     Ok((input, UnionForwardDcl(id)))
@@ -1370,13 +1371,6 @@ fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
 /// (57) <enum_dcl> ::= "enum" <identifier> "{" <enumerator> { "," <enumerator> }* "}"
 /// ```
 pub fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
-    // "enum"
-    let (input, _) = tuple((
-        skip_space_and_comment0,
-        tag("enum"),
-        skip_space_and_comment1,
-    ))(input)?;
-
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -1425,7 +1419,6 @@ pub fn parse_simple_declarator(input: &str) -> PResult<String> {
 /// (63) <typedef_dcl> ::= "typedef" <type_declarator>
 /// ```
 pub fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
-    let (input, _) = tuple((tag("typedef"), skip_space_and_comment1))(input)?;
     parse_type_declarator(input)
 }
 
@@ -1444,13 +1437,29 @@ fn parse_type_declarator(input: &str) -> PResult<Typedef> {
         Ok((input, TypedefType::Template(t)))
     }
 
-    fn constr(input: &str) -> PResult<TypedefType> {
-        let (input, t) = parse_constr_type_dcl(input)?;
+    fn constr<'a>(head: &str, input: &'a str) -> PResult<'a, TypedefType> {
+        let (input, t) = parse_constr_type_dcl(head, input)?;
         Ok((input, TypedefType::Constr(t)))
     }
 
     // <simple_type_spec> | <template_type_spec> | <constr_type_dcl>
-    let (input, type_dcl) = alt((simple, template, constr))(input)?;
+    let (input, type_dcl) = if let Ok((input, (head, _))) = tuple((
+        alt((
+            tag("struct"),
+            tag("enum"),
+            tag("union"),
+            tag("bitset"),
+            tag("bitmask"),
+            tag("native"),
+            tag("typedef"),
+        )),
+        skip_space_and_comment1,
+    ))(input)
+    {
+        constr(head, input)?
+    } else {
+        alt((simple, template))(input)?
+    };
 
     let (input, _) = skip_space_and_comment1(input)?;
 

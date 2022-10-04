@@ -23,7 +23,7 @@ use nom::{
 /// (185) <template_module_dcl> ::= "module" <identifier> "<" <formal_parameters> ">" "{" <tpl_definition>+ "}"
 /// ```
 pub fn parse_template_module_dcl(input: &str) -> PResult<TemplateModuleDcl> {
-    let (input, (_, _, id)) = tuple((tag("module"), skip_space_and_comment1, parse_id))(input)?;
+    let (input, id) = parse_id(input)?;
 
     let (input, params) = delimited(lparen("<"), parse_formal_parameters, rparen(">"))(input)?;
 
@@ -129,8 +129,7 @@ fn parse_tpl_definition(input: &str) -> PResult<TplDefinition> {
 /// (190) <template_module_inst> ::= "module" <scoped_name> "<" <actual_parameters> ">" <identifier>
 /// ```
 pub fn parse_template_module_inst(input: &str) -> PResult<TemplateModuleInst> {
-    let (input, (_, _, name)) =
-        tuple((tag("module"), skip_space_and_comment1, parse_scoped_name))(input)?;
+    let (input, name) = parse_scoped_name(input)?;
 
     let (input, params) = delimited(lparen("<"), parse_actual_parameters, rparen(">"))(input)?;
 
