@@ -26,7 +26,7 @@ use nom::{
         complete::{anychar, digit0, digit1, hex_digit1, oct_digit0, one_of, satisfy},
         is_alphabetic, is_alphanumeric, is_hex_digit, is_oct_digit,
     },
-    combinator::{eof, fail},
+    combinator::fail,
     error::{Error, VerboseError},
     multi::{many0, many1, separated_list1},
     sequence::{delimited, tuple},
@@ -54,7 +54,7 @@ fn parse_comment(input: &str) -> PResult<&str> {
     let (input, c) = alt((tag("//"), tag("/*")))(input)?;
 
     let (input, comment) = match c {
-        "//" => alt((tag("\n"), eof))(input)?,
+        "//" => alt((take_until("\n"), take_while(|_| true)))(input)?,
         "/*" => {
             let (input, c) = take_until("*/")(input)?;
             let (input, _) = tag("*/")(input)?;
@@ -230,11 +230,7 @@ fn parse_module_dcl(input: &str) -> PResult<Module> {
     let (input, id) = parse_id(input)?;
 
     // "{" <definition>+ "}"
-    let (input, definitions) = delimited(
-        tuple((skip_space_and_comment0, tag("{"), skip_space_and_comment0)),
-        many1(parse_definition),
-        tuple((skip_space_and_comment0, tag("}"))),
-    )(input)?;
+    let (input, definitions) = delimited(lparen("{"), many1(parse_definition), rparen("}"))(input)?;
 
     Ok((input, Module { id, definitions }))
 }
@@ -245,8 +241,17 @@ fn parse_module_dcl(input: &str) -> PResult<Module> {
 ///                     | <scoped_name> "::" <identifier>
 /// ```
 pub fn parse_scoped_name(input: &str) -> PResult<ScopedName> {
-    let (input, ids) = separated_list1(tag("::"), parse_id)(input)?;
-    Ok((input, ScopedName(ids)))
+    fn relative(input: &str) -> PResult<ScopedName> {
+        let (input, (_, result)) = tuple((tag("::"), separated_list1(tag("::"), parse_id)))(input)?;
+        Ok((input, ScopedName::Relative(result)))
+    }
+
+    fn absolute(input: &str) -> PResult<ScopedName> {
+        let (input, ids) = separated_list1(tag("::"), parse_id)(input)?;
+        Ok((input, ScopedName::Absolute(ids)))
+    }
+
+    alt((relative, absolute))(input)
 }
 
 /// ```text
@@ -311,15 +316,19 @@ pub fn parse_const_type(input: &str) -> PResult<ConstType> {
         return Ok((input, ConstType::PrimitiveType(p)));
     }
 
-    if name.0.len() >= 2 {
-        return Ok((input, ConstType::ScopedName(name)));
-    }
+    if let ScopedName::Absolute(s) = &name {
+        if s.len() >= 2 {
+            return Ok((input, ConstType::ScopedName(name)));
+        }
 
-    match name.0[0].as_str() {
-        "string" => Ok((input, ConstType::StringType(StringType::UnlimitedSize))),
-        "wstring" => Ok((input, ConstType::WStringType(WStringType::UnlimitedSize))),
-        "fixed" => Ok((input, ConstType::FixedPointConst)),
-        _ => Ok((input, ConstType::ScopedName(name))),
+        match s[0].as_str() {
+            "string" => Ok((input, ConstType::StringType(StringType::UnlimitedSize))),
+            "wstring" => Ok((input, ConstType::WStringType(WStringType::UnlimitedSize))),
+            "fixed" => Ok((input, ConstType::FixedPointConst)),
+            _ => Ok((input, ConstType::ScopedName(name))),
+        }
+    } else {
+        Ok((input, ConstType::ScopedName(name)))
     }
 }
 
@@ -924,6 +933,20 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
         Ok((input, TemplateTypeSpec::Map(t)))
     }
 
+    if tuple((
+        alt((tag("string"), tag("wstring"))),
+        skip_space_and_comment1,
+    ))(input)
+    .is_ok()
+    {
+        let (input, s) = alt((tag("string"), tag("wstring")))(input)?;
+        match s {
+            "string" => return Ok((input, TemplateTypeSpec::String(StringType::UnlimitedSize))),
+            "wtring" => return Ok((input, TemplateTypeSpec::WString(WStringType::UnlimitedSize))),
+            _ => unreachable!(),
+        }
+    }
+
     alt((sequence, string, wide_string, fixed_pt, map_type))(input)
 }
 
@@ -1200,26 +1223,30 @@ fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
 
     let (input, name) = parse_scoped_name(input)?;
 
-    if name.0.len() >= 2 {
-        return Ok((input, SwitchTypeSpec::ScopedName(name)));
-    }
+    if let ScopedName::Absolute(s) = &name {
+        if s.len() >= 2 {
+            return Ok((input, SwitchTypeSpec::ScopedName(name)));
+        }
 
-    match name.0[0].as_str() {
-        "short" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Short))),
-        "long" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Long))),
-        "char" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Char))),
-        "boolean" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Boolean))),
-        "int8" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int8))),
-        "uint8" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint8))),
-        "int16" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int16))),
-        "uint16" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint16))),
-        "int32" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int32))),
-        "uint32" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint32))),
-        "int64" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int64))),
-        "uint64" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint64))),
-        "wchar" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::WChar))),
-        "octet" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Octet))),
-        _ => Ok((input, SwitchTypeSpec::ScopedName(name))),
+        match s[0].as_str() {
+            "short" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Short))),
+            "long" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Long))),
+            "char" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Char))),
+            "boolean" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Boolean))),
+            "int8" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int8))),
+            "uint8" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint8))),
+            "int16" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int16))),
+            "uint16" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint16))),
+            "int32" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int32))),
+            "uint32" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint32))),
+            "int64" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Int64))),
+            "uint64" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Uint64))),
+            "wchar" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::WChar))),
+            "octet" => Ok((input, SwitchTypeSpec::PrimitiveType(PrimitiveType::Octet))),
+            _ => Ok((input, SwitchTypeSpec::ScopedName(name))),
+        }
+    } else {
+        Ok((input, SwitchTypeSpec::ScopedName(name)))
     }
 }
 
@@ -1432,7 +1459,7 @@ fn parse_declarator(input: &str) -> PResult<AnyDeclarator> {
     parse_any_declarator(input)
 }
 
-fn parse_keywards(input: &str) -> PResult<&str> {
+fn _parse_keywards(input: &str) -> PResult<&str> {
     alt((
         alt((
             tag("abstract"),

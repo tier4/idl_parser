@@ -189,8 +189,10 @@ fn parse_op_type_spec(input: &str) -> PResult<OpTypeSpec> {
     let (input, type_spec) = parse_type_spec(input)?;
 
     if let TypeSpec::ScopedName(name) = &type_spec {
-        if name.0.len() == 1 && name.0[0] == "void" {
-            return Ok((input, OpTypeSpec::Void));
+        if let ScopedName::Absolute(s) = name {
+            if s.len() == 1 && s[0] == "void" {
+                return Ok((input, OpTypeSpec::Void));
+            }
         }
     }
 
@@ -307,13 +309,11 @@ fn parse_readonly_attr_declarator(input: &str) -> PResult<ReadonlyAttrDeclarator
         parse_simple_declarator,
     )(input)?;
 
-    if ids.len() == 1 {
-        if tuple((skip_space_and_comment1, tag("raises")))(input).is_ok() {
-            let (input, _) = skip_space_and_comment1(input)?;
-            let (input, raises) = parse_raises_expr(input)?;
-            let s = take(&mut ids[0]);
-            return Ok((input, ReadonlyAttrDeclarator::WithRaises(s, raises)));
-        }
+    if ids.len() == 1 && tuple((skip_space_and_comment1, tag("raises")))(input).is_ok() {
+        let (input, _) = skip_space_and_comment1(input)?;
+        let (input, raises) = parse_raises_expr(input)?;
+        let s = take(&mut ids[0]);
+        return Ok((input, ReadonlyAttrDeclarator::WithRaises(s, raises)));
     }
 
     Ok((input, ReadonlyAttrDeclarator::IDs(ids)))
@@ -345,18 +345,17 @@ fn parse_attr_spec(input: &str) -> PResult<AttrSpec> {
 fn parse_attr_declarator(input: &str) -> PResult<AttrDeclarator> {
     let (input, mut ids) = separated_list1(delimiter(","), parse_simple_declarator)(input)?;
 
-    if ids.len() == 1 {
-        if tuple((
+    if ids.len() == 1
+        && tuple((
             skip_space_and_comment1,
             alt((tag("getraises"), tag("setraises"))),
         ))(input)
         .is_ok()
-        {
-            let (input, _) = skip_space_and_comment1(input)?;
-            let (input, raises) = parse_attr_raises_expr(input)?;
-            let s = take(&mut ids[0]);
-            return Ok((input, AttrDeclarator::WithRaises(s, raises)));
-        }
+    {
+        let (input, _) = skip_space_and_comment1(input)?;
+        let (input, raises) = parse_attr_raises_expr(input)?;
+        let s = take(&mut ids[0]);
+        return Ok((input, AttrDeclarator::WithRaises(s, raises)));
     }
 
     Ok((input, AttrDeclarator::IDs(ids)))

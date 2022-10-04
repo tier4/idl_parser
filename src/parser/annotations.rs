@@ -15,7 +15,7 @@ use crate::{
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    multi::{many0, separated_list1},
+    multi::{many0, many1, separated_list1},
     sequence::{delimited, tuple},
 };
 
@@ -119,11 +119,11 @@ fn parse_annotation_member_type(input: &str) -> PResult<ConstType> {
 /// ```
 ///
 /// `<annotation_appl>` is never used because of the specification; OMG IDL 4.2
-fn _parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
+fn parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
     let (input, (_, name)) = tuple((tag("@"), parse_scoped_name))(input)?;
 
     let (input, params) = if let Ok((input, _)) = lparen("(")(input) {
-        let (input, params) = _parse_annotation_appl_params(input)?;
+        let (input, params) = parse_annotation_appl_params(input)?;
         let (input, _) = rparen(")")(input)?;
         (input, Some(params))
     } else {
@@ -137,9 +137,9 @@ fn _parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
 /// (226) <annotation_appl_params> ::= <const_expr>
 ///                                  | <annotation_appl_param> { "," <annotation_appl_param> }*
 /// ```
-fn _parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
+fn parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
     fn appl_params(input: &str) -> PResult<AnnotationApplParams> {
-        let (input, result) = separated_list1(delimiter(","), _parse_annotation_appl_param)(input)?;
+        let (input, result) = separated_list1(delimiter(","), parse_annotation_appl_param)(input)?;
         Ok((input, AnnotationApplParams::ApplParams(result)))
     }
 
@@ -154,9 +154,17 @@ fn _parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
 /// ```text
 /// (227) <annotation_appl_param> ::= <identifier> "=" <const_expr>
 /// ```
-fn _parse_annotation_appl_param(input: &str) -> PResult<AnnotationApplParam> {
+fn parse_annotation_appl_param(input: &str) -> PResult<AnnotationApplParam> {
     let (input, id) = parse_id(input)?;
     let (input, _) = delimiter("=")(input)?;
     let (input, expr) = parse_const_expr(input)?;
     Ok((input, AnnotationApplParam { id, expr }))
+}
+
+pub fn parse_annotation_apps(input: &str) -> PResult<Vec<AnnotationAppl>> {
+    many1(delimited(
+        skip_space_and_comment0,
+        parse_annotation_appl,
+        skip_space_and_comment0,
+    ))(input)
 }

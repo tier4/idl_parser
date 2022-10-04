@@ -30,16 +30,26 @@ pub enum Definition {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct ScopedName(pub Vec<String>);
+pub enum ScopedName {
+    Absolute(Vec<String>),
+    Relative(Vec<String>),
+}
 
 impl ScopedName {
     pub fn to_primitive(&self) -> Option<PrimitiveType> {
-        if self.0.len() == 1 {
-            PrimitiveType::new(self.0[0].as_str())
-        } else {
-            None
+        if let ScopedName::Absolute(s) = self {
+            if s.len() == 1 {
+                return PrimitiveType::new(s[0].as_str());
+            }
         }
+        None
     }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct Identifier {
+    pub annotation: Option<AnnotationAppl>,
+    pub id: String,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
