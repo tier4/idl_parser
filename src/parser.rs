@@ -9,13 +9,19 @@ mod value_types;
 use crate::{expr::Definition, parser::core::skip_space_and_comment0};
 use nom::{
     combinator::eof,
-    error::{Error, VerboseError},
+    error::{Error, ErrorKind},
     IResult,
 };
+use nom_greedyerror::GreedyError;
+use nom_locate::LocatedSpan;
 
-type PResult<'a, OUT> = IResult<&'a str, OUT, VerboseError<&'a str>>;
+type Span<'a> = LocatedSpan<&'a str>;
 
-pub fn parse(mut input: &str) -> PResult<Vec<Definition>> {
+type PResult<'a, OUT> = IResult<Span<'a>, OUT, GreedyError<Span<'a>, ErrorKind>>;
+
+pub fn parse(input: &str) -> PResult<Vec<Definition>> {
+    let mut input = Span::new(input);
+
     let mut result = Vec::new();
     loop {
         let (i, _) = skip_space_and_comment0(input)?;
@@ -24,7 +30,7 @@ pub fn parse(mut input: &str) -> PResult<Vec<Definition>> {
 
         result.push(m);
 
-        if let Ok((_, _)) = eof::<&str, Error<&str>>(i) {
+        if let Ok((_, _)) = eof::<Span, Error<Span>>(i) {
             break;
         }
 
@@ -36,9 +42,10 @@ pub fn parse(mut input: &str) -> PResult<Vec<Definition>> {
 
 #[cfg(test)]
 mod tests {
-    use super::core::skip_space_and_comment0;
+    use super::{core::skip_space_and_comment0, Span};
     use crate::parse;
-    use nom::{error::convert_error, Finish};
+    use nom::Finish;
+    use nom_greedyerror::convert_error;
 
     #[test]
     fn parser() {
@@ -80,7 +87,7 @@ abc */
 // abc
 // def"#;
 
-        match skip_space_and_comment0(input) {
+        match skip_space_and_comment0(Span::new(input)) {
             Ok((input, _)) => {
                 println!("{input}");
             }
@@ -95,7 +102,8 @@ abc */
 
     #[test]
     fn parser_complex() {
-        let input = r#"module example_msg {
+        let input = r#"
+module example_msg {
     module msg {
         typedef int32 int32__10[10];
         module StdMsg_Constants {
@@ -106,6 +114,7 @@ abc */
             const string WAITING_FOR_ROUTE = "WaitingForRoute";
             const string PLANNING = "Planning";
         };
+
         @verbatim (language="comment", text=
         "http://wiki.ros.org/msg")
         struct StdMsg {

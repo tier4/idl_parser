@@ -1,4 +1,4 @@
-use super::{annotations::parse_annotation_apps, PResult};
+use super::{annotations::parse_annotation_apps, PResult, Span};
 use crate::{
     character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
     expr::{
@@ -31,10 +31,11 @@ use nom::{
     multi::{many0, many1, separated_list1},
     sequence::{delimited, tuple},
 };
+use nom_greedyerror::AsStr;
 use num_bigint::BigInt;
 use num_traits::Zero;
 
-pub fn lparen<'a>(lparen: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str, ())> {
+pub fn lparen<'a>(lparen: &'a str) -> impl FnMut(Span<'a>) -> PResult<((), Span, ())> {
     tuple((
         skip_space_and_comment0,
         tag(lparen),
@@ -42,18 +43,18 @@ pub fn lparen<'a>(lparen: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str, 
     ))
 }
 
-pub fn rparen<'a>(rparen: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str)> {
+pub fn rparen<'a>(rparen: &'a str) -> impl FnMut(Span<'a>) -> PResult<((), Span)> {
     tuple((skip_space_and_comment0, tag(rparen)))
 }
 
-pub fn delimiter<'a>(d: &'a str) -> impl FnMut(&'a str) -> PResult<((), &str, ())> {
+pub fn delimiter<'a>(d: &'a str) -> impl FnMut(Span<'a>) -> PResult<((), Span, ())> {
     lparen(d)
 }
 
-fn parse_comment(input: &str) -> PResult<&str> {
+fn parse_comment(input: Span) -> PResult<Span> {
     let (input, c) = alt((tag("//"), tag("/*")))(input)?;
 
-    let (input, comment) = match c {
+    let (input, comment) = match c.as_str() {
         "//" => alt((take_until("\n"), take_while(|_| true)))(input)?,
         "/*" => {
             let (input, c) = take_until("*/")(input)?;
@@ -66,7 +67,7 @@ fn parse_comment(input: &str) -> PResult<&str> {
     Ok((input, comment))
 }
 
-pub fn skip_space_and_comment0(input: &str) -> PResult<()> {
+pub fn skip_space_and_comment0(input: Span) -> PResult<()> {
     let (input, _) = many0(alt((
         tag(" "),
         tag(LF_S),
@@ -79,7 +80,7 @@ pub fn skip_space_and_comment0(input: &str) -> PResult<()> {
     Ok((input, ()))
 }
 
-pub fn skip_space_and_comment1(input: &str) -> PResult<()> {
+pub fn skip_space_and_comment1(input: Span) -> PResult<()> {
     let (input, _) = many1(alt((
         tag(" "),
         tag(LF_S),
@@ -95,13 +96,13 @@ pub fn skip_space_and_comment1(input: &str) -> PResult<()> {
 /// ```text
 /// <identifier>
 /// ```
-pub fn parse_id(input: &str) -> PResult<String> {
+pub fn parse_id(input: Span) -> PResult<String> {
     let (input, head) = satisfy(|c| c == '_' || is_alphabetic(c as u8))(input)?;
     let (input, tail) = take_while(|c| c == '_' || is_alphanumeric(c as u8))(input)?;
 
     let mut result = String::new();
     result.push(head);
-    result.push_str(tail);
+    result.push_str(tail.as_str());
     Ok((input, result))
 }
 
@@ -133,75 +134,75 @@ pub fn parse_id(input: &str) -> PResult<String> {
 ///
 /// (218) <definition> ::+ <annotaion_dcl> ";"
 /// ```
-pub fn parse_definition(input: &str) -> PResult<Definition> {
-    fn module(input: &str) -> PResult<Definition> {
+pub fn parse_definition(input: Span) -> PResult<Definition> {
+    fn module(input: Span) -> PResult<Definition> {
         let (input, def) = parse_module_dcl(input)?;
         Ok((input, Definition::Module(def)))
     }
 
-    fn const_dcl(input: &str) -> PResult<Definition> {
+    fn const_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_const_dcl(input)?;
         Ok((input, Definition::Const(def)))
     }
 
-    fn type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, Definition> {
+    fn type_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, Definition> {
         let (input, def) = parse_type_dcl(head, input)?;
         Ok((input, Definition::Type(def)))
     }
 
-    fn except_dcl(input: &str) -> PResult<Definition> {
+    fn except_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_except_dcl(input)?;
         Ok((input, Definition::Except(def)))
     }
 
-    fn interface_dcl(input: &str) -> PResult<Definition> {
+    fn interface_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_interface_dcl(input)?;
         Ok((input, Definition::Interface(def)))
     }
 
-    fn value_dcl(input: &str) -> PResult<Definition> {
+    fn value_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_value_dcl(input)?;
         Ok((input, Definition::Value(def)))
     }
 
-    fn component_dcl(input: &str) -> PResult<Definition> {
+    fn component_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_component_dcl(input)?;
         Ok((input, Definition::Component(def)))
     }
 
-    fn home_dcl(input: &str) -> PResult<Definition> {
+    fn home_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_home_dcl(input)?;
         Ok((input, Definition::Home(def)))
     }
 
-    fn port_type_dcl(input: &str) -> PResult<Definition> {
+    fn port_type_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_porttype_dcl(input)?;
         Ok((input, Definition::PortType(def)))
     }
 
-    fn connector_dcl(input: &str) -> PResult<Definition> {
+    fn connector_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_connector_dcl(input)?;
         Ok((input, Definition::Connector(def)))
     }
 
-    fn template_module_dcl(input: &str) -> PResult<Definition> {
+    fn template_module_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_template_module_dcl(input)?;
         Ok((input, Definition::TemplateModuleDcl(def)))
     }
 
-    fn template_module_inst(input: &str) -> PResult<Definition> {
+    fn template_module_inst(input: Span) -> PResult<Definition> {
         let (input, def) = parse_template_module_inst(input)?;
         Ok((input, Definition::TemplateModuleInst(def)))
     }
 
-    fn annotation_dcl(input: &str) -> PResult<Definition> {
+    fn annotation_dcl(input: Span) -> PResult<Definition> {
         let (input, def) = parse_annotation_dcl(input)?;
         Ok((input, Definition::Annotation(def)))
     }
 
     let (input, _) = skip_space_and_comment0(input)?;
 
-    let (input, _annotation) = if tag::<&str, &str, Error<&str>>("@")(input).is_ok() {
+    let (input, _annotation) = if tag::<&str, Span, Error<Span>>("@")(input).is_ok() {
         if tuple((tag("annotation"), skip_space_and_comment1))(input).is_ok() {
             let (input, result) = annotation_dcl(input)?;
             let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
@@ -238,11 +239,11 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
         skip_space_and_comment1,
     ))(input)?;
 
-    let (input, result) = match head {
+    let (input, result) = match head.as_str() {
         "module" => alt((module, template_module_dcl, template_module_inst))(input)?,
         "const" => const_dcl(input)?,
         "struct" | "enum" | "union" | "bitmask" | "bitset" | "typedef" | "native" => {
-            type_dcl(head, input)?
+            type_dcl(head.as_str(), input)?
         }
         "exception" => except_dcl(input)?,
         "interface" => interface_dcl(input)?,
@@ -262,7 +263,7 @@ pub fn parse_definition(input: &str) -> PResult<Definition> {
 /// ```text
 /// (3) <module_dcl> ::= "module" <identifier> "{" <definition>+ "}"
 /// ```
-fn parse_module_dcl(input: &str) -> PResult<Module> {
+fn parse_module_dcl(input: Span) -> PResult<Module> {
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -277,13 +278,13 @@ fn parse_module_dcl(input: &str) -> PResult<Module> {
 ///                     | "::" <identifier>
 ///                     | <scoped_name> "::" <identifier>
 /// ```
-pub fn parse_scoped_name(input: &str) -> PResult<ScopedName> {
-    fn relative(input: &str) -> PResult<ScopedName> {
+pub fn parse_scoped_name(input: Span) -> PResult<ScopedName> {
+    fn relative(input: Span) -> PResult<ScopedName> {
         let (input, (_, result)) = tuple((tag("::"), separated_list1(tag("::"), parse_id)))(input)?;
         Ok((input, ScopedName::Relative(result)))
     }
 
-    fn absolute(input: &str) -> PResult<ScopedName> {
+    fn absolute(input: Span) -> PResult<ScopedName> {
         let (input, ids) = separated_list1(tag("::"), parse_id)(input)?;
         Ok((input, ScopedName::Absolute(ids)))
     }
@@ -294,7 +295,7 @@ pub fn parse_scoped_name(input: &str) -> PResult<ScopedName> {
 /// ```text
 /// (5) <const_dcl> ::= "const" <const_type> <identifier> "=" <const_expr>
 /// ```
-pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
+pub fn parse_const_dcl(input: Span) -> PResult<ConstDcl> {
     // <const_type>
     let (input, const_type) = parse_const_type(input)?;
 
@@ -330,7 +331,7 @@ pub fn parse_const_dcl(input: &str) -> PResult<ConstDcl> {
 ///                    | <wide_string_type>
 ///                    | <scoped_name>
 /// ```
-pub fn parse_const_type(input: &str) -> PResult<ConstType> {
+pub fn parse_const_type(input: Span) -> PResult<ConstType> {
     if let Ok((input, result)) = alt((parse_int_words, parse_long_double))(input) {
         return Ok((input, ConstType::PrimitiveType(result)));
     }
@@ -369,7 +370,7 @@ pub fn parse_const_type(input: &str) -> PResult<ConstType> {
 /// ( 7) <const_expr> ::= <or_expr>
 /// (19) <positive_int_const> ::= <const_expr>
 /// ```
-pub fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
+pub fn parse_const_expr(input: Span) -> PResult<ConstExpr> {
     parse_or_expr(input)
 }
 
@@ -377,7 +378,7 @@ pub fn parse_const_expr(input: &str) -> PResult<ConstExpr> {
 /// (8) <or_expr> ::= <xor_expr>
 ///                 | <or_expr> "|" <xor_expr>
 /// ```
-fn parse_or_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_or_expr(input: Span) -> PResult<ConstExpr> {
     let (input, left) = parse_xor_expr(input)?;
 
     if let Ok((input, _)) = delimiter("|")(input) {
@@ -392,7 +393,7 @@ fn parse_or_expr(input: &str) -> PResult<ConstExpr> {
 /// (9) <xor_expr> ::= <and_expr>
 ///                  | <xor_expr> "^" <and_expr>
 /// ```
-fn parse_xor_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_xor_expr(input: Span) -> PResult<ConstExpr> {
     let (input, left) = parse_and_expr(input)?;
 
     if let Ok((input, _)) = delimiter("^")(input) {
@@ -407,7 +408,7 @@ fn parse_xor_expr(input: &str) -> PResult<ConstExpr> {
 /// (10) <and_expr> ::= <shift_expr>
 ///                   | <and_expr> "&" <shift_expr>
 /// ```
-fn parse_and_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_and_expr(input: Span) -> PResult<ConstExpr> {
     let (input, left) = parse_shift_expr(input)?;
 
     if let Ok((input, _)) = delimiter("&")(input) {
@@ -423,13 +424,13 @@ fn parse_and_expr(input: &str) -> PResult<ConstExpr> {
 ///                     | <shift_expr> ">>" <add_expr>
 ///                     | <shift_expr> "<<" <add_expr>
 /// ```
-fn parse_shift_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_shift_expr(input: Span) -> PResult<ConstExpr> {
     let (input, left) = parse_add_expr(input)?;
 
     if let Ok((input, (_, op, _))) = alt((delimiter(">>"), delimiter("<<")))(input) {
         let (input, right) = parse_shift_expr(input)?;
 
-        match op {
+        match op.as_str() {
             ">>" => Ok((input, ConstExpr::RShift(Box::new(left), Box::new(right)))),
             "<<" => Ok((input, ConstExpr::LShift(Box::new(left), Box::new(right)))),
             _ => unreachable!(),
@@ -444,13 +445,13 @@ fn parse_shift_expr(input: &str) -> PResult<ConstExpr> {
 ///                   | <add_expr> "+" <mult_expr>
 ///                   | <add_expr> "-" <mult_expr>
 /// ```
-fn parse_add_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_add_expr(input: Span) -> PResult<ConstExpr> {
     let (input, left) = parse_mult_expr(input)?;
 
     if let Ok((input, (_, op, _))) = alt((delimiter("+"), delimiter("-")))(input) {
         let (input, right) = parse_add_expr(input)?;
 
-        match op {
+        match op.as_str() {
             "+" => Ok((input, ConstExpr::Add(Box::new(left), Box::new(right)))),
             "-" => Ok((input, ConstExpr::Sub(Box::new(left), Box::new(right)))),
             _ => unreachable!(),
@@ -466,13 +467,13 @@ fn parse_add_expr(input: &str) -> PResult<ConstExpr> {
 ///                    | <mult_expr> "/" <unary_expr>
 ///                    | <mult_expr> "%" <unary_expr>
 /// ```
-fn parse_mult_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_mult_expr(input: Span) -> PResult<ConstExpr> {
     let (input, left) = parse_unary_expr(input)?;
 
     if let Ok((input, (_, op, _))) = alt((delimiter("*"), delimiter("/"), delimiter("%")))(input) {
         let (input, right) = parse_mult_expr(input)?;
 
-        match op {
+        match op.as_str() {
             "*" => Ok((input, ConstExpr::Mul(Box::new(left), Box::new(right)))),
             "/" => Ok((input, ConstExpr::Div(Box::new(left), Box::new(right)))),
             "%" => Ok((input, ConstExpr::Mod(Box::new(left), Box::new(right)))),
@@ -488,21 +489,21 @@ fn parse_mult_expr(input: &str) -> PResult<ConstExpr> {
 ///                     | <primary_expr>
 /// (15) <unary_operator> ::= "-" | "+" | "~"
 /// ```
-fn parse_unary_expr(input: &str) -> PResult<ConstExpr> {
+fn parse_unary_expr(input: Span) -> PResult<ConstExpr> {
     let (input, _) = skip_space_and_comment0(input)?;
 
     let (input, op) = if let Ok((input, op)) =
-        alt((tag::<&str, &str, Error<&str>>("+"), tag("-"), tag("~")))(input)
+        alt((tag::<&str, Span, Error<Span>>("+"), tag("-"), tag("~")))(input)
     {
         (input, op)
     } else {
-        (input, "")
+        (input, Span::new(""))
     };
 
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, expr) = parse_primary_expr(input)?;
 
-    let expr = match op {
+    let expr = match op.as_str() {
         "-" => UnaryOpExpr::Minus(Box::new(expr)),
         "~" => UnaryOpExpr::Negate(Box::new(expr)),
         "+" => UnaryOpExpr::Plus(Box::new(expr)),
@@ -518,13 +519,13 @@ fn parse_unary_expr(input: &str) -> PResult<ConstExpr> {
 ///                       | <literal>
 ///                       | "(" <const_expr> ")"
 /// ```
-fn parse_primary_expr(input: &str) -> PResult<ConstExpr> {
-    fn expr_literal(input: &str) -> PResult<ConstExpr> {
+fn parse_primary_expr(input: Span) -> PResult<ConstExpr> {
+    fn expr_literal(input: Span) -> PResult<ConstExpr> {
         let (input, literal) = parse_literal(input)?;
         Ok((input, ConstExpr::Literal(literal)))
     }
 
-    fn expr_scoped_name(input: &str) -> PResult<ConstExpr> {
+    fn expr_scoped_name(input: Span) -> PResult<ConstExpr> {
         let (input, name) = parse_scoped_name(input)?;
         Ok((input, ConstExpr::ScopedName(name)))
     }
@@ -546,7 +547,7 @@ fn parse_primary_expr(input: &str) -> PResult<ConstExpr> {
 ///                  | <string_literal>
 ///                  | <wide_string_literal>
 /// ```
-fn parse_literal(input: &str) -> PResult<Literal> {
+fn parse_literal(input: Span) -> PResult<Literal> {
     alt((
         parse_num,
         parse_hex,
@@ -560,33 +561,34 @@ fn parse_literal(input: &str) -> PResult<Literal> {
 /// ```test
 /// (18) <boolean_literal> ::= "TRUE" | "FALSE"
 /// ```
-fn parse_boolean_literal(input: &str) -> PResult<Literal> {
+fn parse_boolean_literal(input: Span) -> PResult<Literal> {
     let (input, value) = alt((tag("TRUE"), tag("FALSE")))(input)?;
 
-    match value {
+    match value.as_str() {
         "TRUE" => Ok((input, Literal::Boolean(true))),
         "FALSE" => Ok((input, Literal::Boolean(false))),
         _ => unreachable!(),
     }
 }
 
-fn parse_sign(input: &str) -> PResult<bool> {
-    let (input, sign) = tag::<&str, &str, Error<&str>>("-")(input).unwrap_or((input, ""));
-    match sign {
+fn parse_sign(input: Span) -> PResult<bool> {
+    let (input, sign) =
+        tag::<&str, Span, Error<Span>>("-")(input).unwrap_or((input, Span::new("")));
+    match sign.as_str() {
         "-" => Ok((input, true)),
         "" => Ok((input, false)),
         _ => unreachable!(),
     }
 }
 
-fn parse_num(input: &str) -> PResult<Literal> {
+fn parse_num(input: Span) -> PResult<Literal> {
     let (input, sign) = parse_sign(input)?;
 
-    let (input, mut integer) = if let Ok((input, _)) = tag::<&str, &str, Error<&str>>("0.")(input) {
+    let (input, mut integer) = if let Ok((input, _)) = tag::<&str, Span, Error<Span>>("0.")(input) {
         (input, BigInt::zero())
     } else {
         let (input, num) = parse_decimal(input)?;
-        if let Ok((input, _)) = tag::<&str, &str, Error<&str>>(".")(input) {
+        if let Ok((input, _)) = tag::<&str, Span, Error<Span>>(".")(input) {
             (input, num)
         } else {
             // decimal
@@ -598,7 +600,7 @@ fn parse_num(input: &str) -> PResult<Literal> {
     // floating- or fixed-point
     let (input, fraction) = digit1(input)?;
     let (input, c) = alt((tag("d"), tag("D"), tag("e"), tag("E")))(input)?;
-    match c {
+    match c.as_str() {
         "d" | "D" => {
             let mut scale = 0;
             for n in fraction.bytes() {
@@ -613,10 +615,10 @@ fn parse_num(input: &str) -> PResult<Literal> {
         }
         "e" | "E" => {
             let (input, exp_sign) =
-                tag::<&str, &str, VerboseError<&str>>("-")(input).unwrap_or((input, ""));
+                tag::<&str, Span, VerboseError<Span>>("-")(input).unwrap_or((input, Span::new("")));
             let sign = if sign { "-" } else { "" };
 
-            let (input, float_num) = if exp_sign == "-" {
+            let (input, float_num) = if exp_sign == Span::new("-") {
                 let (input, exp) = parse_decimal(input)?;
                 (input, format!("{sign}{integer}.{fraction}e-{exp}"))
             } else if let Ok((input, exp)) = parse_decimal(input) {
@@ -635,7 +637,7 @@ fn parse_num(input: &str) -> PResult<Literal> {
 }
 
 /// [1-0][0-9]*
-fn parse_decimal(input: &str) -> PResult<BigInt> {
+fn parse_decimal(input: Span) -> PResult<BigInt> {
     let (input, head) = one_of("123456789")(input)?;
     let (input, tail) = digit0(input)?;
 
@@ -653,7 +655,7 @@ fn parse_decimal(input: &str) -> PResult<BigInt> {
 }
 
 /// 0[0-8]*
-fn parse_octal(input: &str) -> PResult<Literal> {
+fn parse_octal(input: Span) -> PResult<Literal> {
     let (input, _) = tag("0")(input)?;
     let (input, tail) = oct_digit0(input)?;
 
@@ -680,7 +682,7 @@ fn hex_to_num(hex: char) -> u8 {
 }
 
 /// (0x|0X)[0-9a-fA-F]+
-fn parse_hex(input: &str) -> PResult<Literal> {
+fn parse_hex(input: Span) -> PResult<Literal> {
     let (input, _) = alt((tag("0x"), tag("0X")))(input)?;
     let (input, tail) = hex_digit1(input)?;
 
@@ -693,12 +695,12 @@ fn parse_hex(input: &str) -> PResult<Literal> {
     Ok((input, Literal::Integer(result)))
 }
 
-fn parse_string(input: &str) -> PResult<Literal> {
+fn parse_string(input: Span) -> PResult<Literal> {
     let (mut input, _) = alt((tag("\""), tag("L\"")))(input)?;
     let mut result = String::new();
 
     loop {
-        if let Ok((input, _)) = tag::<&str, &str, Error<&str>>("\"")(input) {
+        if let Ok((input, _)) = tag::<&str, Span, Error<Span>>("\"")(input) {
             return Ok((input, Literal::String(result)));
         };
 
@@ -709,7 +711,7 @@ fn parse_string(input: &str) -> PResult<Literal> {
 }
 
 /// 'c', where `c` is a character or escaped character
-fn parse_char(input: &str) -> PResult<Literal> {
+fn parse_char(input: Span) -> PResult<Literal> {
     let (input, _) = alt((tag("'"), tag("L'")))(input)?;
     let (input, result) = parse_char_escape(input)?;
     let (input, _) = tag("'")(input)?;
@@ -717,8 +719,8 @@ fn parse_char(input: &str) -> PResult<Literal> {
     Ok((input, Literal::Char(result)))
 }
 
-fn parse_char_escape(input: &str) -> PResult<char> {
-    if let Ok((input, _)) = tag::<&str, &str, Error<&str>>("\\")(input) {
+fn parse_char_escape(input: Span) -> PResult<char> {
+    if let Ok((input, _)) = tag::<&str, Span, Error<Span>>("\\")(input) {
         let (input, c) = one_of("ntvbrfa?\\'\"oxu")(input)?;
         match c {
             'n' => Ok((input, LF)),
@@ -794,18 +796,18 @@ fn parse_char_escape(input: &str) -> PResult<char> {
 ///                   | <native_dcl>
 ///                   | <typedef_dcl>
 /// ```
-pub fn parse_type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, TypeDcl> {
-    fn constr_type<'a>(head: &str, input: &'a str) -> PResult<'a, TypeDcl> {
+pub fn parse_type_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, TypeDcl> {
+    fn constr_type<'a>(head: &str, input: Span<'a>) -> PResult<'a, TypeDcl> {
         let (input, dcl) = parse_constr_type_dcl(head, input)?;
         Ok((input, TypeDcl::ConstrType(dcl)))
     }
 
-    fn native(input: &str) -> PResult<TypeDcl> {
+    fn native(input: Span) -> PResult<TypeDcl> {
         let (input, dcl) = parse_native_dcl(input)?;
         Ok((input, TypeDcl::Native(dcl)))
     }
 
-    fn typedef(input: &str) -> PResult<TypeDcl> {
+    fn typedef(input: Span) -> PResult<TypeDcl> {
         let (input, dcl) = parse_typedef_dcl(input)?;
         Ok((input, TypeDcl::Typedef(dcl)))
     }
@@ -822,8 +824,8 @@ pub fn parse_type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, TypeDcl> {
 /// ( 21) <type_spec> ::= <simple_type_spec>
 /// (216) <type_spec> ::+ <template_type_spec>
 /// ```
-pub fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
-    fn template_type_spec(input: &str) -> PResult<TypeSpec> {
+pub fn parse_type_spec(input: Span) -> PResult<TypeSpec> {
+    fn template_type_spec(input: Span) -> PResult<TypeSpec> {
         let (input, t) = parse_template_type_spec(input)?;
         Ok((input, TypeSpec::Template(Box::new(t))))
     }
@@ -834,7 +836,7 @@ pub fn parse_type_spec(input: &str) -> PResult<TypeSpec> {
 /// ```text
 /// (22) <simple_type_spec> ::= <base_type_spec> | <scoped_name>
 /// ```
-fn parse_simple_type_spec(input: &str) -> PResult<TypeSpec> {
+fn parse_simple_type_spec(input: Span) -> PResult<TypeSpec> {
     if let Ok((input, result)) = alt((parse_int_words, parse_long_double))(input) {
         return Ok((input, TypeSpec::PrimitiveType(result)));
     }
@@ -861,18 +863,18 @@ fn parse_simple_type_spec(input: &str) -> PResult<TypeSpec> {
 // ```
 
 /// Parse integer types consisting more than or equal to 2 words.
-pub fn parse_int_words(input: &str) -> PResult<PrimitiveType> {
-    fn long_long(input: &str) -> PResult<PrimitiveType> {
+pub fn parse_int_words(input: Span) -> PResult<PrimitiveType> {
+    fn long_long(input: Span) -> PResult<PrimitiveType> {
         let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("long")))(input)?;
         Ok((input, PrimitiveType::LongLong))
     }
 
-    fn unsigned_short(input: &str) -> PResult<PrimitiveType> {
+    fn unsigned_short(input: Span) -> PResult<PrimitiveType> {
         let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("short")))(input)?;
         Ok((input, PrimitiveType::UnsignedLong))
     }
 
-    fn unsigned_long_long(input: &str) -> PResult<PrimitiveType> {
+    fn unsigned_long_long(input: Span) -> PResult<PrimitiveType> {
         let (input, _) = tuple((
             tag("unsigned"),
             skip_space_and_comment1,
@@ -883,7 +885,7 @@ pub fn parse_int_words(input: &str) -> PResult<PrimitiveType> {
         Ok((input, PrimitiveType::UnsignedLongLong))
     }
 
-    fn unsigned_long(input: &str) -> PResult<PrimitiveType> {
+    fn unsigned_long(input: Span) -> PResult<PrimitiveType> {
         let (input, _) = tuple((tag("unsigned"), skip_space_and_comment1, tag("long")))(input)?;
         Ok((input, PrimitiveType::UnsignedLong))
     }
@@ -891,7 +893,7 @@ pub fn parse_int_words(input: &str) -> PResult<PrimitiveType> {
     alt((long_long, unsigned_short, unsigned_long_long, unsigned_long))(input)
 }
 
-fn parse_long_double(input: &str) -> PResult<PrimitiveType> {
+fn parse_long_double(input: Span) -> PResult<PrimitiveType> {
     let (input, _) = tuple((tag("long"), skip_space_and_comment1, tag("double")))(input)?;
     Ok((input, PrimitiveType::LongDouble))
 }
@@ -945,28 +947,28 @@ fn parse_long_double(input: &str) -> PResult<PrimitiveType> {
 ///
 /// (197) <template_type_spec> ::+ <map_type>
 /// ```
-fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
-    fn sequence(input: &str) -> PResult<TemplateTypeSpec> {
+fn parse_template_type_spec(input: Span) -> PResult<TemplateTypeSpec> {
+    fn sequence(input: Span) -> PResult<TemplateTypeSpec> {
         let (input, t) = parse_sequence_type(input)?;
         Ok((input, TemplateTypeSpec::Sequence(t)))
     }
 
-    fn string(input: &str) -> PResult<TemplateTypeSpec> {
+    fn string(input: Span) -> PResult<TemplateTypeSpec> {
         let (input, t) = parse_string_type(input)?;
         Ok((input, TemplateTypeSpec::String(t)))
     }
 
-    fn wide_string(input: &str) -> PResult<TemplateTypeSpec> {
+    fn wide_string(input: Span) -> PResult<TemplateTypeSpec> {
         let (input, t) = parse_wide_string_type(input)?;
         Ok((input, TemplateTypeSpec::WString(t)))
     }
 
-    fn fixed_pt(input: &str) -> PResult<TemplateTypeSpec> {
+    fn fixed_pt(input: Span) -> PResult<TemplateTypeSpec> {
         let (input, t) = parse_fixed_pt_type(input)?;
         Ok((input, TemplateTypeSpec::FixedPoint(t)))
     }
 
-    fn map_type(input: &str) -> PResult<TemplateTypeSpec> {
+    fn map_type(input: Span) -> PResult<TemplateTypeSpec> {
         let (input, t) = parse_map_type(input)?;
         Ok((input, TemplateTypeSpec::Map(t)))
     }
@@ -978,7 +980,7 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
     .is_ok()
     {
         let (input, s) = alt((tag("string"), tag("wstring")))(input)?;
-        match s {
+        match s.as_str() {
             "string" => return Ok((input, TemplateTypeSpec::String(StringType::UnlimitedSize))),
             "wtring" => return Ok((input, TemplateTypeSpec::WString(WStringType::UnlimitedSize))),
             _ => unreachable!(),
@@ -992,14 +994,14 @@ fn parse_template_type_spec(input: &str) -> PResult<TemplateTypeSpec> {
 /// (39) <sequence_type> ::= "sequence" "<" <type_spec> "," <positive_int_const> ">"
 ///                        | "sequence" "<" <type_spec> ">"
 /// ```
-pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
+pub fn parse_sequence_type(input: Span) -> PResult<SequenceType> {
     let (input, _) = tuple((tag("sequence"), lparen("<")))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment0(input)?;
     let (input, c) = alt((tag(","), tag(">")))(input)?;
 
-    match c {
+    match c.as_str() {
         "," => {
             let (input, _) = skip_space_and_comment0(input)?;
             let (input, expr) = parse_const_expr(input)?;
@@ -1016,7 +1018,7 @@ pub fn parse_sequence_type(input: &str) -> PResult<SequenceType> {
 /// ```text
 /// "<" <positive_int_const> ">"
 /// ```
-fn parse_max_size(input: &str) -> PResult<ConstExpr> {
+fn parse_max_size(input: Span) -> PResult<ConstExpr> {
     delimited(lparen("<"), parse_const_expr, rparen(">"))(input)
 }
 
@@ -1026,7 +1028,7 @@ fn parse_max_size(input: &str) -> PResult<ConstExpr> {
 /// ```
 ///
 /// This function parses only `"string" "<" <positive_int_const> ">"`.
-fn parse_string_type(input: &str) -> PResult<StringType> {
+fn parse_string_type(input: Span) -> PResult<StringType> {
     let (input, _) = tag("string")(input)?;
     let (input, size) = parse_max_size(input)?;
     Ok((input, StringType::Sized(size)))
@@ -1038,7 +1040,7 @@ fn parse_string_type(input: &str) -> PResult<StringType> {
 /// ```
 ///
 /// This function parses only `"string" "<" <positive_int_const> ">"`.
-fn parse_wide_string_type(input: &str) -> PResult<WStringType> {
+fn parse_wide_string_type(input: Span) -> PResult<WStringType> {
     let (input, _) = tag("wstring")(input)?;
     let (input, size) = parse_max_size(input)?;
     Ok((input, WStringType::Sized(size)))
@@ -1047,7 +1049,7 @@ fn parse_wide_string_type(input: &str) -> PResult<WStringType> {
 /// ```text
 /// (42) <fixed_pt_type> ::= "fixed" "<" <positive_int_const> "," <positive_int_const> ">"
 /// ```
-fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
+fn parse_fixed_pt_type(input: Span) -> PResult<FixedPtType> {
     let (input, _) = tuple((tag("fixed"), lparen("<")))(input)?;
 
     let (input, total_digits) = parse_const_expr(input)?;
@@ -1079,28 +1081,28 @@ fn parse_fixed_pt_type(input: &str) -> PResult<FixedPtType> {
 /// (198) <constr_type_dcl> ::+ <bitset_dcl>
 ///                           | <bitmask_dcl>
 /// ```
-fn parse_constr_type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, ConstrTypeDcl> {
-    fn struct_type(input: &str) -> PResult<ConstrTypeDcl> {
+fn parse_constr_type_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, ConstrTypeDcl> {
+    fn struct_type(input: Span) -> PResult<ConstrTypeDcl> {
         let (input, t) = parse_struct_dcl(input)?;
         Ok((input, ConstrTypeDcl::Struct(t)))
     }
 
-    fn enum_type(input: &str) -> PResult<ConstrTypeDcl> {
+    fn enum_type(input: Span) -> PResult<ConstrTypeDcl> {
         let (input, t) = parse_enum_dcl(input)?;
         Ok((input, ConstrTypeDcl::Enum(t)))
     }
 
-    fn union_type(input: &str) -> PResult<ConstrTypeDcl> {
+    fn union_type(input: Span) -> PResult<ConstrTypeDcl> {
         let (input, t) = parse_union_dcl(input)?;
         Ok((input, ConstrTypeDcl::Union(t)))
     }
 
-    fn bitset(input: &str) -> PResult<ConstrTypeDcl> {
+    fn bitset(input: Span) -> PResult<ConstrTypeDcl> {
         let (input, t) = parse_bitset_dcl(input)?;
         Ok((input, ConstrTypeDcl::Bitset(t)))
     }
 
-    fn bitmask(input: &str) -> PResult<ConstrTypeDcl> {
+    fn bitmask(input: Span) -> PResult<ConstrTypeDcl> {
         let (input, t) = parse_bitmask_dcl(input)?;
         Ok((input, ConstrTypeDcl::Bitmask(t)))
     }
@@ -1119,13 +1121,13 @@ fn parse_constr_type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, ConstrTy
 /// (45) <struct_dcl> ::= <struct_def>
 ///                     | <struct_forward_dcl>
 /// ```
-fn parse_struct_dcl(input: &str) -> PResult<StructDcl> {
-    fn forward_dcl(input: &str) -> PResult<StructDcl> {
+fn parse_struct_dcl(input: Span) -> PResult<StructDcl> {
+    fn forward_dcl(input: Span) -> PResult<StructDcl> {
         let (input, dcl) = parse_struct_forward_dcl(input)?;
         Ok((input, StructDcl::ForwardDcl(dcl)))
     }
 
-    fn struct_def(input: &str) -> PResult<StructDcl> {
+    fn struct_def(input: Span) -> PResult<StructDcl> {
         let (input, def) = parse_struct_def(input)?;
         Ok((input, StructDcl::Def(def)))
     }
@@ -1140,13 +1142,13 @@ fn parse_struct_dcl(input: &str) -> PResult<StructDcl> {
 /// (195) <struct_def> ::+ "struct" <identifier> ":" <scoped_name> "{" <member>* "}"
 ///                      | "struct" <identifier> "{" "}"
 /// ```
-fn parse_struct_def(input: &str) -> PResult<StructDef> {
+fn parse_struct_def(input: Span) -> PResult<StructDef> {
     // <identifier>
     let (input, id) = parse_id(input)?;
 
     let (input, _) = skip_space_and_comment0(input)?;
 
-    let (input, inheritance) = if let Ok((input, _)) = tag::<&str, &str, Error<&str>>(":")(input) {
+    let (input, inheritance) = if let Ok((input, _)) = tag::<&str, Span, Error<Span>>(":")(input) {
         let (input, (_, name)) = tuple((skip_space_and_comment0, parse_scoped_name))(input)?;
         (input, Some(name))
     } else {
@@ -1169,10 +1171,10 @@ fn parse_struct_def(input: &str) -> PResult<StructDef> {
 /// ```text
 /// (47) <member> ::= <type_spec> <declarators> ";"
 /// ```
-pub fn parse_member(input: &str) -> PResult<Member> {
+pub fn parse_member(input: Span) -> PResult<Member> {
     let (input, _) = skip_space_and_comment0(input)?;
 
-    let (input, _annotation) = if tag::<&str, &str, Error<&str>>("@")(input).is_ok() {
+    let (input, _annotation) = if tag::<&str, Span, Error<Span>>("@")(input).is_ok() {
         let (input, annotation) = parse_annotation_apps(input)?;
         (input, Some(annotation))
     } else {
@@ -1201,7 +1203,7 @@ pub fn parse_member(input: &str) -> PResult<Member> {
 /// ```text
 /// (48) <struct_forward_dcl> ::= "struct" <identifier>
 /// ```
-fn parse_struct_forward_dcl(input: &str) -> PResult<StructForwardDcl> {
+fn parse_struct_forward_dcl(input: Span) -> PResult<StructForwardDcl> {
     let (input, id) = parse_id(input)?;
 
     Ok((input, StructForwardDcl(id)))
@@ -1211,13 +1213,13 @@ fn parse_struct_forward_dcl(input: &str) -> PResult<StructForwardDcl> {
 /// (49) <union_dcl> ::= <union_def>
 ///                    | <union_forward_dcl>
 /// ```
-fn parse_union_dcl(input: &str) -> PResult<UnionDcl> {
-    fn union_def(input: &str) -> PResult<UnionDcl> {
+fn parse_union_dcl(input: Span) -> PResult<UnionDcl> {
+    fn union_def(input: Span) -> PResult<UnionDcl> {
         let (input, def) = parse_union_def(input)?;
         Ok((input, UnionDcl::Def(def)))
     }
 
-    fn forward_dcl(input: &str) -> PResult<UnionDcl> {
+    fn forward_dcl(input: Span) -> PResult<UnionDcl> {
         let (input, dcl) = parse_union_forward_dcl(input)?;
         Ok((input, UnionDcl::ForwardDcl(dcl)))
     }
@@ -1228,7 +1230,7 @@ fn parse_union_dcl(input: &str) -> PResult<UnionDcl> {
 /// ```text
 /// (50) <union_def> ::= "union" <identifier> "switch" "(" <switch_type_spec> ")" "{" <switch_body> "}"
 /// ```
-fn parse_union_def(input: &str) -> PResult<UnionDef> {
+fn parse_union_def(input: Span) -> PResult<UnionDef> {
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -1261,7 +1263,7 @@ fn parse_union_def(input: &str) -> PResult<UnionDef> {
 /// (196) <switch_type_spec> ::+ <wide_char_type>
 ///                            | <octet_type>
 /// ```
-fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
+fn parse_switch_type_spec(input: Span) -> PResult<SwitchTypeSpec> {
     if let Ok((input, result)) = parse_int_words(input) {
         return Ok((input, SwitchTypeSpec::PrimitiveType(result)));
     }
@@ -1298,14 +1300,14 @@ fn parse_switch_type_spec(input: &str) -> PResult<SwitchTypeSpec> {
 /// ```text
 /// (52) <switch_body> ::= <case>+
 /// ```
-fn parse_switch_body(input: &str) -> PResult<Vec<Case>> {
+fn parse_switch_body(input: Span) -> PResult<Vec<Case>> {
     many1(parse_case)(input)
 }
 
 /// ```text
 /// (53) <case> ::= <case_label>+ <element_spec> ";"
 /// ```
-fn parse_case(input: &str) -> PResult<Case> {
+fn parse_case(input: Span) -> PResult<Case> {
     let (input, labels) = many1(parse_case_label)(input)?;
 
     let (input, _) = skip_space_and_comment0(input)?;
@@ -1320,8 +1322,8 @@ fn parse_case(input: &str) -> PResult<Case> {
 /// (54) <case_label> ::= "case" <const_expr> ":"
 ///                     | "default" ":"
 /// ```
-fn parse_case_label(input: &str) -> PResult<CaseLabel> {
-    fn case(input: &str) -> PResult<CaseLabel> {
+fn parse_case_label(input: Span) -> PResult<CaseLabel> {
+    fn case(input: Span) -> PResult<CaseLabel> {
         let (input, _) = tuple((tag("case"), skip_space_and_comment1))(input)?;
 
         let (input, expr) = parse_const_expr(input)?;
@@ -1331,7 +1333,7 @@ fn parse_case_label(input: &str) -> PResult<CaseLabel> {
         Ok((input, CaseLabel::Case(expr)))
     }
 
-    fn default(input: &str) -> PResult<CaseLabel> {
+    fn default(input: Span) -> PResult<CaseLabel> {
         let (input, _) = tuple((tag("default"), skip_space_and_comment0, tag(":")))(input)?;
         Ok((input, CaseLabel::Default))
     }
@@ -1343,7 +1345,7 @@ fn parse_case_label(input: &str) -> PResult<CaseLabel> {
 /// ```text
 /// (55) <element_spec> ::= <type_spec> <declarator>
 /// ```
-fn parse_element_spec(input: &str) -> PResult<ElementSpec> {
+fn parse_element_spec(input: Span) -> PResult<ElementSpec> {
     let (input, type_spec) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment1(input)?;
@@ -1361,7 +1363,7 @@ fn parse_element_spec(input: &str) -> PResult<ElementSpec> {
 /// ```text
 /// (56) <union_forward_dcl> ::= "union" <identifier>
 /// ```
-fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
+fn parse_union_forward_dcl(input: Span) -> PResult<UnionForwardDcl> {
     let (input, id) = parse_id(input)?;
 
     Ok((input, UnionForwardDcl(id)))
@@ -1370,7 +1372,7 @@ fn parse_union_forward_dcl(input: &str) -> PResult<UnionForwardDcl> {
 /// ```text
 /// (57) <enum_dcl> ::= "enum" <identifier> "{" <enumerator> { "," <enumerator> }* "}"
 /// ```
-pub fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
+pub fn parse_enum_dcl(input: Span) -> PResult<EnumDcl> {
     // <identifier>
     let (input, id) = parse_id(input)?;
 
@@ -1387,21 +1389,21 @@ pub fn parse_enum_dcl(input: &str) -> PResult<EnumDcl> {
 /// ```text
 /// (58) <enumerator> ::= <identifier>
 /// ```
-fn parse_enumerator(input: &str) -> PResult<String> {
+fn parse_enumerator(input: Span) -> PResult<String> {
     parse_id(input)
 }
 
 /// ```text
 /// (60) <fixed_array_size> ::= "[" <positive_int_const> "]"
 /// ```
-fn parse_fixed_array_size(input: &str) -> PResult<ConstExpr> {
+fn parse_fixed_array_size(input: Span) -> PResult<ConstExpr> {
     delimited(lparen("["), parse_const_expr, rparen("]"))(input)
 }
 
 /// ```text
 /// (61) <native_dcl> ::= "native" <simple_declarator>
 /// ```
-fn parse_native_dcl(input: &str) -> PResult<NativeDcl> {
+fn parse_native_dcl(input: Span) -> PResult<NativeDcl> {
     let (input, _) = tuple((tag("native"), skip_space_and_comment1))(input)?;
     let (input, id) = parse_simple_declarator(input)?;
 
@@ -1411,14 +1413,14 @@ fn parse_native_dcl(input: &str) -> PResult<NativeDcl> {
 /// ```text
 /// (62) <simple_declarator> ::= <identifier>
 /// ```
-pub fn parse_simple_declarator(input: &str) -> PResult<String> {
+pub fn parse_simple_declarator(input: Span) -> PResult<String> {
     parse_id(input)
 }
 
 /// ```text
 /// (63) <typedef_dcl> ::= "typedef" <type_declarator>
 /// ```
-pub fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
+pub fn parse_typedef_dcl(input: Span) -> PResult<Typedef> {
     parse_type_declarator(input)
 }
 
@@ -1426,18 +1428,18 @@ pub fn parse_typedef_dcl(input: &str) -> PResult<Typedef> {
 /// (64) <type_declarator> ::= { <simple_type_spec> | <template_type_spec> | <constr_type_dcl> } <any_declarators>
 /// (65) <any_declalators> ::= <any_declarator> { "," <any_declarator> }*
 /// ```
-fn parse_type_declarator(input: &str) -> PResult<Typedef> {
-    fn simple(input: &str) -> PResult<TypedefType> {
+fn parse_type_declarator(input: Span) -> PResult<Typedef> {
+    fn simple(input: Span) -> PResult<TypedefType> {
         let (input, t) = parse_simple_type_spec(input)?;
         Ok((input, TypedefType::Simple(t)))
     }
 
-    fn template(input: &str) -> PResult<TypedefType> {
+    fn template(input: Span) -> PResult<TypedefType> {
         let (input, t) = parse_template_type_spec(input)?;
         Ok((input, TypedefType::Template(t)))
     }
 
-    fn constr<'a>(head: &str, input: &'a str) -> PResult<'a, TypedefType> {
+    fn constr<'a>(head: &str, input: Span<'a>) -> PResult<'a, TypedefType> {
         let (input, t) = parse_constr_type_dcl(head, input)?;
         Ok((input, TypedefType::Constr(t)))
     }
@@ -1456,7 +1458,7 @@ fn parse_type_declarator(input: &str) -> PResult<Typedef> {
         skip_space_and_comment1,
     ))(input)
     {
-        constr(head, input)?
+        constr(head.as_str(), input)?
     } else {
         alt((simple, template))(input)?
     };
@@ -1480,7 +1482,7 @@ fn parse_type_declarator(input: &str) -> PResult<Typedef> {
 ///                         | <array_declarator>
 /// (59) <array_declarator> ::= <identifier> <fixed_array_size>+
 /// ```
-fn parse_any_declarator(input: &str) -> PResult<AnyDeclarator> {
+fn parse_any_declarator(input: Span) -> PResult<AnyDeclarator> {
     let (input, id) = parse_id(input)?;
 
     let (input, array_size) = many0(parse_fixed_array_size)(input)?;
@@ -1498,7 +1500,7 @@ fn parse_any_declarator(input: &str) -> PResult<AnyDeclarator> {
 /// ```text
 /// (67) <declarators> ::= <declarator> { "," <declarator> }*
 /// ```
-pub fn parse_declarators(input: &str) -> PResult<Vec<AnyDeclarator>> {
+pub fn parse_declarators(input: Span) -> PResult<Vec<AnyDeclarator>> {
     separated_list1(delimiter(","), parse_declarator)(input)
 }
 
@@ -1506,106 +1508,8 @@ pub fn parse_declarators(input: &str) -> PResult<Vec<AnyDeclarator>> {
 /// ( 68) <declarator> ::= <simple_declarator>
 /// (217) <declarator> ::+ <array_declarator>
 /// ```
-fn parse_declarator(input: &str) -> PResult<AnyDeclarator> {
+fn parse_declarator(input: Span) -> PResult<AnyDeclarator> {
     parse_any_declarator(input)
-}
-
-fn _parse_keywards(input: &str) -> PResult<&str> {
-    alt((
-        alt((
-            tag("abstract"),
-            tag("any"),
-            tag("alias"),
-            tag("attribute"),
-            tag("bitfield"),
-            tag("bitmask"),
-            tag("bitset"),
-            tag("boolean"),
-            tag("case"),
-            tag("char"),
-            tag("component"),
-            tag("connector"),
-            tag("const"),
-            tag("consumes"),
-            tag("context"),
-            tag("custom"),
-        )),
-        alt((
-            tag("default"),
-            tag("double"),
-            tag("exception"),
-            tag("emits"),
-            tag("enum"),
-            tag("eventype"),
-            tag("factory"),
-            tag("FALSE"),
-            tag("finder"),
-            tag("fixed"),
-            tag("float"),
-            tag("getraises"),
-            tag("home"),
-            tag("import"),
-            tag("in"),
-            tag("inout"),
-        )),
-        alt((
-            tag("interface"),
-            tag("local"),
-            tag("long"),
-            tag("manages"),
-            tag("map"),
-            tag("mirrorport"),
-            tag("module"),
-            tag("multiple"),
-            tag("native"),
-            tag("Object"),
-            tag("octet"),
-            tag("oneway"),
-            tag("out"),
-            tag("primarykey"),
-            tag("private"),
-            tag("port"),
-        )),
-        alt((
-            tag("porttype"),
-            tag("provides"),
-            tag("public"),
-            tag("publishes"),
-            tag("raises"),
-            tag("readonly"),
-            tag("setraises"),
-            tag("sequence"),
-            tag("short"),
-            tag("string"),
-            tag("struct"),
-            tag("supports"),
-            tag("switch"),
-            tag("TRUE"),
-            tag("truncatable"),
-            tag("typedef"),
-        )),
-        alt((
-            tag("typeid"),
-            tag("typename"),
-            tag("typeprefix"),
-            tag("unsigned"),
-            tag("union"),
-            tag("uses"),
-            tag("ValueBase"),
-            tag("valuetype"),
-            tag("void"),
-            tag("wchar"),
-            tag("wstring"),
-            tag("int8"),
-            tag("uint8"),
-            tag("int16"),
-            tag("int32"),
-            tag("int64"),
-            tag("uint16"),
-            tag("uint32"),
-            tag("uint64"),
-        )),
-    ))(input)
 }
 
 #[cfg(test)]
@@ -1617,55 +1521,55 @@ mod tests {
 
     #[test]
     fn literal() {
-        let input = "1234";
+        let input = Span::new("1234");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::Integer(BigInt::from_usize(1234).unwrap())
         );
 
-        let input = "0xabcd";
+        let input = Span::new("0xabcd");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::Integer(BigInt::from_usize(0xabcd).unwrap())
         );
 
-        let input = "0XEF45";
+        let input = Span::new("0XEF45");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::Integer(BigInt::from_usize(0xef45).unwrap())
         );
 
-        let input = "0127";
+        let input = Span::new("0127");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::Integer(BigInt::from_usize(0o127).unwrap())
         );
 
-        let input = "-567";
+        let input = Span::new("-567");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::Integer(BigInt::from_isize(-567).unwrap())
         );
 
-        let input = "-567.04e";
+        let input = Span::new("-567.04e");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::FloatingPoint(-567.04)
         );
 
-        let input = "-567.04e4";
+        let input = Span::new("-567.04e4");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::FloatingPoint(-567.04e4)
         );
 
-        let input = "-567.04e-4";
+        let input = Span::new("-567.04e-4");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::FloatingPoint(-567.04e-4)
         );
 
-        let input = "567.04d";
+        let input = Span::new("567.04d");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::FixedPoint(FixedPoint {
@@ -1674,7 +1578,7 @@ mod tests {
             })
         );
 
-        let input = "-567.04d";
+        let input = Span::new("-567.04d");
         assert_eq!(
             parse_literal(input).unwrap().1,
             Literal::FixedPoint(FixedPoint {
@@ -1683,7 +1587,7 @@ mod tests {
             })
         );
 
-        let input = "'\n'";
+        let input = Span::new("'\n'");
         assert_eq!(parse_literal(input).unwrap().1, Literal::Char('\n'));
     }
 }

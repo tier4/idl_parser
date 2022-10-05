@@ -3,7 +3,7 @@ use super::{
         lparen, parse_const_expr, parse_const_type, parse_id, parse_scoped_name,
         parse_simple_declarator, rparen, skip_space_and_comment0, skip_space_and_comment1,
     },
-    PResult,
+    PResult, Span,
 };
 use crate::{
     expr::{
@@ -22,7 +22,7 @@ use nom::{
 /// ```text
 /// (219) <annotation_dcl> ::= <annotation_header> "{" <annotation_body> "}"
 /// ```
-pub fn parse_annotation_dcl(input: &str) -> PResult<AnnotationDcl> {
+pub fn parse_annotation_dcl(input: Span) -> PResult<AnnotationDcl> {
     let (input, header) = parse_annotation_header(input)?;
     let (input, body) = delimited(lparen("{"), parse_annotation_body, rparen("}"))(input)?;
 
@@ -32,7 +32,7 @@ pub fn parse_annotation_dcl(input: &str) -> PResult<AnnotationDcl> {
 /// ```text
 /// (220) <annotation_header> ::= "@annotation" <identifier>
 /// ```
-fn parse_annotation_header(input: &str) -> PResult<AnnotationHeader> {
+fn parse_annotation_header(input: Span) -> PResult<AnnotationHeader> {
     let (input, (_, _, id)) =
         tuple((tag("@annotation"), skip_space_and_comment1, parse_id))(input)?;
     Ok((input, AnnotationHeader(id)))
@@ -44,33 +44,33 @@ fn parse_annotation_header(input: &str) -> PResult<AnnotationHeader> {
 ///                               | <const_dcl> ";"
 ///                               | <typedef_dcl> ";" }*
 /// ```
-fn parse_annotation_body(input: &str) -> PResult<Vec<AnnotationBody>> {
-    fn annotation_member(input: &str) -> PResult<AnnotationBody> {
+fn parse_annotation_body(input: Span) -> PResult<Vec<AnnotationBody>> {
+    fn annotation_member(input: Span) -> PResult<AnnotationBody> {
         let (input, result) = parse_annotation_member(input)?;
         Ok((input, AnnotationBody::AnnotationMember(result)))
     }
 
-    fn enum_dcl(input: &str) -> PResult<AnnotationBody> {
+    fn enum_dcl(input: Span) -> PResult<AnnotationBody> {
         let (input, _) = tuple((tag("enum"), skip_space_and_comment1))(input)?;
         let (input, result) = parse_enum_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, AnnotationBody::Enum(result)))
     }
 
-    fn const_dcl(input: &str) -> PResult<AnnotationBody> {
+    fn const_dcl(input: Span) -> PResult<AnnotationBody> {
         let (input, _) = tuple((tag("const"), skip_space_and_comment1))(input)?;
         let (input, result) = parse_const_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, AnnotationBody::Const(result)))
     }
 
-    fn typedef_dcl(input: &str) -> PResult<AnnotationBody> {
+    fn typedef_dcl(input: Span) -> PResult<AnnotationBody> {
         let (input, result) = parse_typedef_dcl(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, AnnotationBody::Typedef(result)))
     }
 
-    fn body(input: &str) -> PResult<AnnotationBody> {
+    fn body(input: Span) -> PResult<AnnotationBody> {
         let (input, _) = skip_space_and_comment0(input)?;
         alt((enum_dcl, const_dcl, typedef_dcl, annotation_member))(input)
     }
@@ -81,7 +81,7 @@ fn parse_annotation_body(input: &str) -> PResult<Vec<AnnotationBody>> {
 /// ```text
 /// (222) <annotation_member> ::= <annotation_member_type> <simple_declarator> [ "default" <const_expr> ] ";"
 /// ```
-fn parse_annotation_member(input: &str) -> PResult<AnnotationMember> {
+fn parse_annotation_member(input: Span) -> PResult<AnnotationMember> {
     let (input, (member_type, _, declarator)) = tuple((
         parse_annotation_member_type,
         skip_space_and_comment1,
@@ -112,7 +112,7 @@ fn parse_annotation_member(input: &str) -> PResult<AnnotationMember> {
 /// (223) <annotation_member_type> ::= <const_type> | <any_const_type> | <scoped_name>
 /// (224) <any_const_type> ::= "any"
 /// ```
-fn parse_annotation_member_type(input: &str) -> PResult<ConstType> {
+fn parse_annotation_member_type(input: Span) -> PResult<ConstType> {
     parse_const_type(input)
 }
 
@@ -121,7 +121,7 @@ fn parse_annotation_member_type(input: &str) -> PResult<ConstType> {
 /// ```
 ///
 /// `<annotation_appl>` is never used in the specification; OMG IDL 4.2.
-fn parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
+fn parse_annotation_appl(input: Span) -> PResult<AnnotationAppl> {
     let (input, (_, name)) = tuple((tag("@"), parse_scoped_name))(input)?;
 
     let (input, params) = if let Ok((input, _)) = lparen("(")(input) {
@@ -139,13 +139,13 @@ fn parse_annotation_appl(input: &str) -> PResult<AnnotationAppl> {
 /// (226) <annotation_appl_params> ::= <const_expr>
 ///                                  | <annotation_appl_param> { "," <annotation_appl_param> }*
 /// ```
-fn parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
-    fn appl_params(input: &str) -> PResult<AnnotationApplParams> {
+fn parse_annotation_appl_params(input: Span) -> PResult<AnnotationApplParams> {
+    fn appl_params(input: Span) -> PResult<AnnotationApplParams> {
         let (input, result) = separated_list1(delimiter(","), parse_annotation_appl_param)(input)?;
         Ok((input, AnnotationApplParams::ApplParams(result)))
     }
 
-    fn const_expr(input: &str) -> PResult<AnnotationApplParams> {
+    fn const_expr(input: Span) -> PResult<AnnotationApplParams> {
         let (input, result) = parse_const_expr(input)?;
         Ok((input, AnnotationApplParams::ConstExpr(result)))
     }
@@ -156,14 +156,14 @@ fn parse_annotation_appl_params(input: &str) -> PResult<AnnotationApplParams> {
 /// ```text
 /// (227) <annotation_appl_param> ::= <identifier> "=" <const_expr>
 /// ```
-fn parse_annotation_appl_param(input: &str) -> PResult<AnnotationApplParam> {
+fn parse_annotation_appl_param(input: Span) -> PResult<AnnotationApplParam> {
     let (input, id) = parse_id(input)?;
     let (input, _) = delimiter("=")(input)?;
     let (input, expr) = parse_const_expr(input)?;
     Ok((input, AnnotationApplParam { id, expr }))
 }
 
-pub fn parse_annotation_apps(input: &str) -> PResult<Vec<AnnotationAppl>> {
+pub fn parse_annotation_apps(input: Span) -> PResult<Vec<AnnotationAppl>> {
     many1(delimited(
         skip_space_and_comment0,
         parse_annotation_appl,

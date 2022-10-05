@@ -1,6 +1,6 @@
 use super::{
     core::{delimiter, lparen, parse_scoped_name, rparen, skip_space_and_comment0},
-    PResult,
+    PResult, Span,
 };
 use crate::{
     expr::{
@@ -18,11 +18,12 @@ use nom::{
     multi::{many1, separated_list1},
     sequence::{delimited, tuple},
 };
+use nom_greedyerror::AsStr;
 
 /// ```text
 /// (185) <template_module_dcl> ::= "module" <identifier> "<" <formal_parameters> ">" "{" <tpl_definition>+ "}"
 /// ```
-pub fn parse_template_module_dcl(input: &str) -> PResult<TemplateModuleDcl> {
+pub fn parse_template_module_dcl(input: Span) -> PResult<TemplateModuleDcl> {
     let (input, id) = parse_id(input)?;
 
     let (input, params) = delimited(lparen("<"), parse_formal_parameters, rparen(">"))(input)?;
@@ -43,14 +44,14 @@ pub fn parse_template_module_dcl(input: &str) -> PResult<TemplateModuleDcl> {
 /// ```text
 /// (186) <formal_parameters> ::= <formal_parameter> {"," <formal_parameter>}*
 /// ```
-fn parse_formal_parameters(input: &str) -> PResult<Vec<FormalParameter>> {
+fn parse_formal_parameters(input: Span) -> PResult<Vec<FormalParameter>> {
     separated_list1(delimiter(","), parse_formal_parameter)(input)
 }
 
 /// ```text
 /// (187) <formal_parameter> ::= <formal_parameter_type> <identifier>
 /// ```
-fn parse_formal_parameter(input: &str) -> PResult<FormalParameter> {
+fn parse_formal_parameter(input: Span) -> PResult<FormalParameter> {
     let (input, parameter_type) = parse_formal_parameter_type(input)?;
     let (input, _) = skip_space_and_comment1(input)?;
     let (input, id) = parse_id(input)?;
@@ -63,19 +64,19 @@ fn parse_formal_parameter(input: &str) -> PResult<FormalParameter> {
 ///                                 | "const <const_type>"
 ///                                 | <sequence_type>
 /// ```
-fn parse_formal_parameter_type(input: &str) -> PResult<FormalParameterType> {
-    fn const_type(input: &str) -> PResult<FormalParameterType> {
+fn parse_formal_parameter_type(input: Span) -> PResult<FormalParameterType> {
+    fn const_type(input: Span) -> PResult<FormalParameterType> {
         let (input, _) = tuple((tag("const"), skip_space_and_comment1))(input)?;
         let (input, const_type) = parse_const_type(input)?;
         Ok((input, FormalParameterType::Const(const_type)))
     }
 
-    fn sequence_type(input: &str) -> PResult<FormalParameterType> {
+    fn sequence_type(input: Span) -> PResult<FormalParameterType> {
         let (input, sequence_type) = parse_sequence_type(input)?;
         Ok((input, FormalParameterType::SequenceType(sequence_type)))
     }
 
-    fn types(input: &str) -> PResult<FormalParameterType> {
+    fn types(input: Span) -> PResult<FormalParameterType> {
         let (input, c) = alt((
             tag("typename"),
             tag("interface"),
@@ -88,7 +89,7 @@ fn parse_formal_parameter_type(input: &str) -> PResult<FormalParameterType> {
             tag("sequence"),
         ))(input)?;
 
-        match c {
+        match c.as_str() {
             "typename" => Ok((input, FormalParameterType::Typename)),
             "interface" => Ok((input, FormalParameterType::Interface)),
             "valuetype" => Ok((input, FormalParameterType::ValueType)),
@@ -109,13 +110,13 @@ fn parse_formal_parameter_type(input: &str) -> PResult<FormalParameterType> {
 /// (189) <tpl_definition> ::= <definition>
 ///                          | <template_module_ref> ";"
 /// ```
-fn parse_tpl_definition(input: &str) -> PResult<TplDefinition> {
-    fn definition(input: &str) -> PResult<TplDefinition> {
+fn parse_tpl_definition(input: Span) -> PResult<TplDefinition> {
+    fn definition(input: Span) -> PResult<TplDefinition> {
         let (input, result) = parse_definition(input)?;
         Ok((input, TplDefinition::Definition(result)))
     }
 
-    fn template_module_ref(input: &str) -> PResult<TplDefinition> {
+    fn template_module_ref(input: Span) -> PResult<TplDefinition> {
         let (input, result) = parse_template_module_ref(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, TplDefinition::TemplateModuleRef(result)))
@@ -128,7 +129,7 @@ fn parse_tpl_definition(input: &str) -> PResult<TplDefinition> {
 /// ```text
 /// (190) <template_module_inst> ::= "module" <scoped_name> "<" <actual_parameters> ">" <identifier>
 /// ```
-pub fn parse_template_module_inst(input: &str) -> PResult<TemplateModuleInst> {
+pub fn parse_template_module_inst(input: Span) -> PResult<TemplateModuleInst> {
     let (input, name) = parse_scoped_name(input)?;
 
     let (input, params) = delimited(lparen("<"), parse_actual_parameters, rparen(">"))(input)?;
@@ -139,7 +140,7 @@ pub fn parse_template_module_inst(input: &str) -> PResult<TemplateModuleInst> {
 /// ```text
 /// (191) <actual_parameters> ::= <actual_parameter> { "," <actual_parameter> }*
 /// ```
-fn parse_actual_parameters(input: &str) -> PResult<Vec<ActualParameter>> {
+fn parse_actual_parameters(input: Span) -> PResult<Vec<ActualParameter>> {
     separated_list1(delimiter(","), parse_actual_parameter)(input)
 }
 
@@ -147,13 +148,13 @@ fn parse_actual_parameters(input: &str) -> PResult<Vec<ActualParameter>> {
 /// (192) <actual_parameter> ::= <type_spec>
 ///                            | <const_expr>
 /// ```
-fn parse_actual_parameter(input: &str) -> PResult<ActualParameter> {
-    fn type_spec(input: &str) -> PResult<ActualParameter> {
+fn parse_actual_parameter(input: Span) -> PResult<ActualParameter> {
+    fn type_spec(input: Span) -> PResult<ActualParameter> {
         let (input, result) = parse_type_spec(input)?;
         Ok((input, ActualParameter::TypeSpec(result)))
     }
 
-    fn const_expr(input: &str) -> PResult<ActualParameter> {
+    fn const_expr(input: Span) -> PResult<ActualParameter> {
         let (input, result) = parse_const_expr(input)?;
         Ok((input, ActualParameter::ConstExpr(result)))
     }
@@ -164,7 +165,7 @@ fn parse_actual_parameter(input: &str) -> PResult<ActualParameter> {
 /// ```text
 /// (193) <template_module_ref> ::= "alias" <scoped_name> "<" <formal_parameter_names> ">" <identifier>
 /// ```
-fn parse_template_module_ref(input: &str) -> PResult<TemplateModuleRef> {
+fn parse_template_module_ref(input: Span) -> PResult<TemplateModuleRef> {
     let (input, (_, _, name)) =
         tuple((tag("alias"), skip_space_and_comment1, parse_scoped_name))(input)?;
 
@@ -178,6 +179,6 @@ fn parse_template_module_ref(input: &str) -> PResult<TemplateModuleRef> {
 /// ```text
 /// (194) <formal_parameter_names> ::= <identifier> {"," <identifier>}*
 /// ```
-fn parse_formal_parameter_names(input: &str) -> PResult<Vec<String>> {
+fn parse_formal_parameter_names(input: Span) -> PResult<Vec<String>> {
     separated_list1(delimiter(","), parse_id)(input)
 }

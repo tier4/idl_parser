@@ -3,7 +3,7 @@ use super::{
         delimiter, lparen, parse_id, parse_member, parse_scoped_name, parse_simple_declarator,
         parse_type_spec, rparen, skip_space_and_comment0, skip_space_and_comment1,
     },
-    PResult,
+    PResult, Span,
 };
 use crate::{
     expr::{
@@ -19,12 +19,13 @@ use nom::{
     multi::{many0, many1, separated_list1},
     sequence::{delimited, tuple},
 };
+use nom_greedyerror::AsStr;
 use std::mem::take;
 
 /// ```text
 /// (72) <except_dcl> ::= "exception" <identifier> "{" <member>*  "}"
 /// ```
-pub fn parse_except_dcl(input: &str) -> PResult<ExceptDcl> {
+pub fn parse_except_dcl(input: Span) -> PResult<ExceptDcl> {
     let (input, id) = parse_id(input)?;
 
     let (input, members) = delimited(lparen("{"), many1(parse_member), rparen("}"))(input)?;
@@ -36,13 +37,13 @@ pub fn parse_except_dcl(input: &str) -> PResult<ExceptDcl> {
 /// (73) <interface_dcl> ::= <interface_def>
 ///                        | <interface_forward_dcl>
 /// ```
-pub fn parse_interface_dcl(input: &str) -> PResult<InterfaceDcl> {
-    fn def(input: &str) -> PResult<InterfaceDcl> {
+pub fn parse_interface_dcl(input: Span) -> PResult<InterfaceDcl> {
+    fn def(input: Span) -> PResult<InterfaceDcl> {
         let (input, result) = parse_interface_def(input)?;
         Ok((input, InterfaceDcl::Def(result)))
     }
 
-    fn forward_dcl(input: &str) -> PResult<InterfaceDcl> {
+    fn forward_dcl(input: Span) -> PResult<InterfaceDcl> {
         let (input, result) = parse_interface_forward_dcl(input)?;
         Ok((input, InterfaceDcl::ForwardDcl(result)))
     }
@@ -53,7 +54,7 @@ pub fn parse_interface_dcl(input: &str) -> PResult<InterfaceDcl> {
 /// ```text
 /// (74) <interface_def> ::= <interface_header> "{" <interface_body> "}"
 /// ```
-fn parse_interface_def(input: &str) -> PResult<InterfaceDef> {
+fn parse_interface_def(input: Span) -> PResult<InterfaceDef> {
     let (input, header) = parse_interface_header(input)?;
 
     let (input, body) = delimited(lparen("{"), parse_interface_body, rparen("}"))(input)?;
@@ -64,7 +65,7 @@ fn parse_interface_def(input: &str) -> PResult<InterfaceDef> {
 /// ```text
 /// (75) <interface_forward_dcl> ::= <interface_kind> <identifier>
 /// ```
-fn parse_interface_forward_dcl(input: &str) -> PResult<InterfaceForwardDcl> {
+fn parse_interface_forward_dcl(input: Span) -> PResult<InterfaceForwardDcl> {
     let (input, id) = parse_id(input)?;
     Ok((input, InterfaceForwardDcl(id)))
 }
@@ -73,7 +74,7 @@ fn parse_interface_forward_dcl(input: &str) -> PResult<InterfaceForwardDcl> {
 /// (76) <interface_header> ::= <interface_kind> <identifier> [ <interface_inheritance_spec> ]
 /// (78) <interface_inheritance_spec> ::= ":" <interface_name> { "," <interface_name> }*
 /// ```
-fn parse_interface_header(input: &str) -> PResult<InterfaceHeader> {
+fn parse_interface_header(input: Span) -> PResult<InterfaceHeader> {
     let (input, id) = parse_id(input)?;
 
     let (input, inheritance) = if let Ok((input, _)) =
@@ -91,21 +92,21 @@ fn parse_interface_header(input: &str) -> PResult<InterfaceHeader> {
 /// ```text
 /// (77) <interface_kind> ::= "interface"
 /// ```
-fn parse_interface_kind(input: &str) -> PResult<&str> {
+fn parse_interface_kind(input: Span) -> PResult<Span> {
     tag("interface")(input)
 }
 
 /// ```text
 /// (79) <interface_name> ::= <scoped_name>
 /// ```
-pub fn parse_interface_name(input: &str) -> PResult<ScopedName> {
+pub fn parse_interface_name(input: Span) -> PResult<ScopedName> {
     parse_scoped_name(input)
 }
 
 /// ```text
 /// (80) <interface_body> ::= <export>*
 /// ```
-fn parse_interface_body(input: &str) -> PResult<Vec<Export>> {
+fn parse_interface_body(input: Span) -> PResult<Vec<Export>> {
     many0(parse_export)(input)
 }
 
@@ -117,28 +118,28 @@ fn parse_interface_body(input: &str) -> PResult<Vec<Export>> {
 ///                 | <const_dcl> ";"
 ///                 | <except_dcl> ";"
 /// ```
-pub fn parse_export(input: &str) -> PResult<Export> {
-    fn op(input: &str) -> PResult<Export> {
+pub fn parse_export(input: Span) -> PResult<Export> {
+    fn op(input: Span) -> PResult<Export> {
         let (input, op) = parse_op_dcl(input)?;
         Ok((input, Export::Op(op)))
     }
 
-    fn attr(input: &str) -> PResult<Export> {
+    fn attr(input: Span) -> PResult<Export> {
         let (input, attr) = parse_attr_dcl(input)?;
         Ok((input, Export::Attr(attr)))
     }
 
-    fn type_dcl<'a>(head: &str, input: &'a str) -> PResult<'a, Export> {
+    fn type_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, Export> {
         let (input, dcl) = parse_type_dcl(head, input)?;
         Ok((input, Export::Type(dcl)))
     }
 
-    fn const_dcl(input: &str) -> PResult<Export> {
+    fn const_dcl(input: Span) -> PResult<Export> {
         let (input, dcl) = parse_const_dcl(input)?;
         Ok((input, Export::Const(dcl)))
     }
 
-    fn except(input: &str) -> PResult<Export> {
+    fn except(input: Span) -> PResult<Export> {
         let (input, dcl) = parse_except_dcl(input)?;
         Ok((input, Export::Except(dcl)))
     }
@@ -158,10 +159,10 @@ pub fn parse_export(input: &str) -> PResult<Export> {
         skip_space_and_comment1,
     ))(input)
     {
-        let (input, result) = match head {
+        let (input, result) = match head.as_str() {
             "const" => const_dcl(input)?,
             "except" => except(input)?,
-            _ => type_dcl(head, input)?,
+            _ => type_dcl(head.as_str(), input)?,
         };
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, result))
@@ -176,7 +177,7 @@ pub fn parse_export(input: &str) -> PResult<Export> {
 /// ```text
 /// (82) <op_dcl> ::= <op_type_spec> <identifier> "(" [ <parameter_dcls> ] ")" [ <raises_expr> ]
 /// ```
-fn parse_op_dcl(input: &str) -> PResult<OpDcl> {
+fn parse_op_dcl(input: Span) -> PResult<OpDcl> {
     let (input, type_spec) = parse_op_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment1(input)?;
@@ -205,7 +206,7 @@ fn parse_op_dcl(input: &str) -> PResult<OpDcl> {
 /// (83) <op_type_spec> ::= <type_spec>
 ///                       | "void"
 /// ```
-fn parse_op_type_spec(input: &str) -> PResult<OpTypeSpec> {
+fn parse_op_type_spec(input: Span) -> PResult<OpTypeSpec> {
     let (input, type_spec) = parse_type_spec(input)?;
 
     if let TypeSpec::ScopedName(name) = &type_spec {
@@ -222,14 +223,14 @@ fn parse_op_type_spec(input: &str) -> PResult<OpTypeSpec> {
 /// ```text
 /// (84) <parameter_dcls> ::= <param_dcl> { "," <param_dcl> }*
 /// ```
-fn parse_parameter_dcls(input: &str) -> PResult<Vec<ParamDcl>> {
+fn parse_parameter_dcls(input: Span) -> PResult<Vec<ParamDcl>> {
     separated_list1(delimiter(","), parse_param_dcl)(input)
 }
 
 /// ```text
 /// (85) <param_dcl> ::= <param_attribute> <type_spec> <simple_declarator>
 /// ```
-fn parse_param_dcl(input: &str) -> PResult<ParamDcl> {
+fn parse_param_dcl(input: Span) -> PResult<ParamDcl> {
     let (input, attr) = parse_param_attribute(input)?;
 
     let (input, _) = skip_space_and_comment1(input)?;
@@ -253,9 +254,9 @@ fn parse_param_dcl(input: &str) -> PResult<ParamDcl> {
 ///                          | "out"
 ///                          | "inout"
 /// ```
-fn parse_param_attribute(input: &str) -> PResult<ParamAttribute> {
+fn parse_param_attribute(input: Span) -> PResult<ParamAttribute> {
     let (input, c) = alt((tag("in"), tag("out"), tag("inout")))(input)?;
-    match c {
+    match c.as_str() {
         "in" => Ok((input, ParamAttribute::In)),
         "out" => Ok((input, ParamAttribute::Out)),
         "inout" => Ok((input, ParamAttribute::InOut)),
@@ -266,7 +267,7 @@ fn parse_param_attribute(input: &str) -> PResult<ParamAttribute> {
 /// ```text
 /// (87) <raises_expr> ::= "raises" "(" <scoped_name> { "," <scoped_name> }* ")"
 /// ```
-pub fn parse_raises_expr(input: &str) -> PResult<Raises> {
+pub fn parse_raises_expr(input: Span) -> PResult<Raises> {
     let (input, _) = tuple((tag("raises"), lparen("(")))(input)?;
 
     let (input, names) = separated_list1(delimiter(","), parse_scoped_name)(input)?;
@@ -280,13 +281,13 @@ pub fn parse_raises_expr(input: &str) -> PResult<Raises> {
 /// (88) <attr_dcl> ::= <readonly_attr_spec>
 ///                   | <attr_spec>
 /// ```
-pub fn parse_attr_dcl(input: &str) -> PResult<AttrDcl> {
-    fn readonly(input: &str) -> PResult<AttrDcl> {
+pub fn parse_attr_dcl(input: Span) -> PResult<AttrDcl> {
+    fn readonly(input: Span) -> PResult<AttrDcl> {
         let (input, spec) = parse_readonly_attr_spec(input)?;
         Ok((input, AttrDcl::Readonly(spec)))
     }
 
-    fn read_write(input: &str) -> PResult<AttrDcl> {
+    fn read_write(input: Span) -> PResult<AttrDcl> {
         let (input, spec) = parse_attr_spec(input)?;
         Ok((input, AttrDcl::ReadWrite(spec)))
     }
@@ -297,7 +298,7 @@ pub fn parse_attr_dcl(input: &str) -> PResult<AttrDcl> {
 /// ```text
 /// (89) <readonly_attr_spec> ::= "readonly" "attribute" <type_spec> <readonly_attr_declarator>
 /// ```
-fn parse_readonly_attr_spec(input: &str) -> PResult<ReadonlyAttrSpec> {
+fn parse_readonly_attr_spec(input: Span) -> PResult<ReadonlyAttrSpec> {
     let (input, _) = tuple((
         tag("readonly"),
         skip_space_and_comment1,
@@ -323,7 +324,7 @@ fn parse_readonly_attr_spec(input: &str) -> PResult<ReadonlyAttrSpec> {
 /// (90) <readonly_attr_declarator> ::= <simple_declarator> <raises_expr>
 ///                                   | <simple_declarator> { "," <simple_declarator> }*
 /// ```
-fn parse_readonly_attr_declarator(input: &str) -> PResult<ReadonlyAttrDeclarator> {
+fn parse_readonly_attr_declarator(input: Span) -> PResult<ReadonlyAttrDeclarator> {
     let (input, mut ids) = separated_list1(
         tuple((skip_space_and_comment0, tag(","), skip_space_and_comment0)),
         parse_simple_declarator,
@@ -342,7 +343,7 @@ fn parse_readonly_attr_declarator(input: &str) -> PResult<ReadonlyAttrDeclarator
 /// ```text
 /// (91) <attr_spec> ::= "attribute" <type_spec> <attr_declarator>
 /// ```
-fn parse_attr_spec(input: &str) -> PResult<AttrSpec> {
+fn parse_attr_spec(input: Span) -> PResult<AttrSpec> {
     let (input, _) = tuple((tag("attribute"), skip_space_and_comment1))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
 
@@ -362,7 +363,7 @@ fn parse_attr_spec(input: &str) -> PResult<AttrSpec> {
 /// (92) <attr_declarator> ::= <simple_declarator> <attr_raises_expr>
 ///                          | <simple_declarator> { "," <simple_declarator> }*
 /// ```
-fn parse_attr_declarator(input: &str) -> PResult<AttrDeclarator> {
+fn parse_attr_declarator(input: Span) -> PResult<AttrDeclarator> {
     let (input, mut ids) = separated_list1(delimiter(","), parse_simple_declarator)(input)?;
 
     if ids.len() == 1
@@ -385,8 +386,8 @@ fn parse_attr_declarator(input: &str) -> PResult<AttrDeclarator> {
 /// (93) <attr_raises_expr> ::= <get_excep_expr> [ <set_excep_expr> ]
 ///                           | <set_excep_expr>
 /// ```
-fn parse_attr_raises_expr(input: &str) -> PResult<AttrRaises> {
-    fn get_excep(input: &str) -> PResult<AttrRaises> {
+fn parse_attr_raises_expr(input: Span) -> PResult<AttrRaises> {
+    fn get_excep(input: Span) -> PResult<AttrRaises> {
         let (input, get_excep) = parse_get_excep_expr(input)?;
 
         if tuple((skip_space_and_comment0, tag("setraises")))(input).is_ok() {
@@ -398,7 +399,7 @@ fn parse_attr_raises_expr(input: &str) -> PResult<AttrRaises> {
         }
     }
 
-    fn set_excep(input: &str) -> PResult<AttrRaises> {
+    fn set_excep(input: Span) -> PResult<AttrRaises> {
         let (input, set_excep) = parse_set_excep_expr(input)?;
         Ok((input, AttrRaises::SetExcep(set_excep)))
     }
@@ -409,7 +410,7 @@ fn parse_attr_raises_expr(input: &str) -> PResult<AttrRaises> {
 /// ```text
 /// (94) <get_excep_expr> ::= "getraises" <exception_list>
 /// ```
-fn parse_get_excep_expr(input: &str) -> PResult<GetExcep> {
+fn parse_get_excep_expr(input: Span) -> PResult<GetExcep> {
     let (input, _) = tuple((tag("getraises"), skip_space_and_comment0))(input)?;
     let (input, names) = parse_exception_list(input)?;
     Ok((input, GetExcep(names)))
@@ -418,7 +419,7 @@ fn parse_get_excep_expr(input: &str) -> PResult<GetExcep> {
 /// ```text
 /// (95) <set_excep_expr> ::= "setraises" <exception_list>
 /// ```
-fn parse_set_excep_expr(input: &str) -> PResult<SetExcep> {
+fn parse_set_excep_expr(input: Span) -> PResult<SetExcep> {
     let (input, _) = tuple((tag("setraises"), skip_space_and_comment0))(input)?;
     let (input, names) = parse_exception_list(input)?;
     Ok((input, SetExcep(names)))
@@ -427,7 +428,7 @@ fn parse_set_excep_expr(input: &str) -> PResult<SetExcep> {
 /// ```text
 /// (96) <exception_list> ::= "(" <scoped_name> { "," <scoped_name> }* ")"
 /// ```
-fn parse_exception_list(input: &str) -> PResult<Vec<ScopedName>> {
+fn parse_exception_list(input: Span) -> PResult<Vec<ScopedName>> {
     delimited(
         lparen("("),
         separated_list1(delimiter(","), parse_scoped_name),
