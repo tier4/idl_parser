@@ -55,12 +55,11 @@ mod tests {
 
 
 module example_msg {
-  typedef int32 int32__10[10];
   module msg {
     struct Buz {
       string c;
-      @verbatim (language="comment", text=
-          "http://wiki.ros.org/std_msgs")
+
+      @verbatim (language="comment", text="http://wiki.ros.org/std_msgs")
       sequence<int32> o;
     };
   };
@@ -68,7 +67,7 @@ module example_msg {
 
         match parse(input).finish() {
             Ok((_, definitions)) => {
-                println!("{:?}", definitions);
+                println!("{:#?}", definitions);
             }
             Err(e) => {
                 let msg = convert_error(input, e);

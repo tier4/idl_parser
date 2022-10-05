@@ -15,10 +15,10 @@ let input = r#"
 // generated code does not contain a copyright notice
 
 module example_msg {
-    typedef int32 int32__10[10];
     module msg {
         struct Buz {
             string c;
+
             @verbatim (language="comment", text="http://wiki.ros.org/std_msgs")
             sequence<int32> o;
         };
@@ -27,7 +27,7 @@ module example_msg {
 
 match parse(input).finish() {
     Ok((_, result)) => {
-        println!("{:?}", result);
+        println!("{:#?}", result);
     }
     Err(e) => {
         let msg = convert_error(input, e);
@@ -35,4 +35,67 @@ match parse(input).finish() {
         panic!();
     }
 }
+```
+
+This will output a result as follows.
+
+```text
+[
+    Module(
+        Module {
+            id: "example_msg",
+            definitions: [
+                Module(
+                    Module {
+                        id: "msg",
+                        definitions: [
+                            Type(
+                                ConstrType(
+                                    Struct(
+                                        Def(
+                                            StructDef {
+                                                id: "Buz",
+                                                members: [
+                                                    Member {
+                                                        type_spec: Template(
+                                                            String(
+                                                                UnlimitedSize,
+                                                            ),
+                                                        ),
+                                                        declarators: [
+                                                            Simple(
+                                                                "c",
+                                                            ),
+                                                        ],
+                                                    },
+                                                    Member {
+                                                        type_spec: Template(
+                                                            Sequence(
+                                                                Unlimited(
+                                                                    PrimitiveType(
+                                                                        Int32,
+                                                                    ),
+                                                                ),
+                                                            ),
+                                                        ),
+                                                        declarators: [
+                                                            Simple(
+                                                                "o",
+                                                            ),
+                                                        ],
+                                                    },
+                                                ],
+                                                inheritance: None,
+                                            },
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ],
+                    },
+                ),
+            ],
+        },
+    ),
+]
 ```
