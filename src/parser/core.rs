@@ -268,9 +268,24 @@ fn parse_module_dcl(input: Span) -> PResult<Module> {
     let (input, id) = parse_id(input)?;
 
     // "{" <definition>+ "}"
-    let (input, definitions) = delimited(lparen("{"), many1(parse_definition), rparen("}"))(input)?;
+    let (input, (_, definitions)) = tuple((lparen("{"), definitions))(input)?;
 
     Ok((input, Module { id, definitions }))
+}
+
+pub fn definitions(mut input: Span) -> PResult<Vec<Definition>> {
+    let mut result = Vec::new();
+
+    loop {
+        if let Ok((i, _)) = rparen("}")(input) {
+            return Ok((i, result));
+        }
+
+        let (i, def) = parse_definition(input)?;
+        result.push(def);
+
+        input = i;
+    }
 }
 
 /// ```text
@@ -618,7 +633,7 @@ fn parse_num(input: Span) -> PResult<Literal> {
                 tag::<&str, Span, VerboseError<Span>>("-")(input).unwrap_or((input, Span::new("")));
             let sign = if sign { "-" } else { "" };
 
-            let (input, float_num) = if exp_sign == Span::new("-") {
+            let (input, float_num) = if exp_sign.as_str() == "-" {
                 let (input, exp) = parse_decimal(input)?;
                 (input, format!("{sign}{integer}.{fraction}e-{exp}"))
             } else if let Ok((input, exp)) = parse_decimal(input) {
@@ -696,18 +711,41 @@ fn parse_hex(input: Span) -> PResult<Literal> {
 }
 
 fn parse_string(input: Span) -> PResult<Literal> {
-    let (mut input, _) = alt((tag("\""), tag("L\"")))(input)?;
+    let (input, head) = alt((tag("\""), tag("L\"")))(input)?;
+    let (input, mut result) = parse_string_tail(input)?;
+
+    let (input, v) = if head.as_str() == "\"" {
+        many0(parse_normal_string)(input)?
+    } else {
+        many0(parse_wide_string)(input)?
+    };
+
+    v.iter().for_each(|s| result.push_str(s.as_str()));
+    Ok((input, Literal::String(result)))
+}
+
+fn parse_string_tail(mut input: Span) -> PResult<String> {
     let mut result = String::new();
 
     loop {
         if let Ok((input, _)) = tag::<&str, Span, Error<Span>>("\"")(input) {
-            return Ok((input, Literal::String(result)));
+            return Ok((input, result));
         };
 
         let (next, c) = parse_char_escape(input)?;
         result.push(c);
         input = next;
     }
+}
+
+fn parse_normal_string(input: Span) -> PResult<String> {
+    let (input, _) = tuple((skip_space_and_comment0, tag("\"")))(input)?;
+    parse_string_tail(input)
+}
+
+fn parse_wide_string(input: Span) -> PResult<String> {
+    let (input, _) = tuple((skip_space_and_comment0, tag("L\"")))(input)?;
+    parse_string_tail(input)
 }
 
 /// 'c', where `c` is a character or escaped character
@@ -1122,29 +1160,25 @@ fn parse_constr_type_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, ConstrT
 ///                     | <struct_forward_dcl>
 /// ```
 fn parse_struct_dcl(input: Span) -> PResult<StructDcl> {
-    fn forward_dcl(input: Span) -> PResult<StructDcl> {
-        let (input, dcl) = parse_struct_forward_dcl(input)?;
-        Ok((input, StructDcl::ForwardDcl(dcl)))
-    }
-
-    fn struct_def(input: Span) -> PResult<StructDcl> {
-        let (input, def) = parse_struct_def(input)?;
-        Ok((input, StructDcl::Def(def)))
-    }
-
     let (input, _) = skip_space_and_comment0(input)?;
-    alt((struct_def, forward_dcl))(input)
+    parse_struct(input)
 }
 
 /// ```text
 /// ( 46) <struct_def> ::= "struct" <identifier> "{" <member>+ "}"
 ///
+/// ( 48) <struct_forward_dcl> ::= "struct" <identifier>
+///
 /// (195) <struct_def> ::+ "struct" <identifier> ":" <scoped_name> "{" <member>* "}"
 ///                      | "struct" <identifier> "{" "}"
 /// ```
-fn parse_struct_def(input: Span) -> PResult<StructDef> {
+fn parse_struct(input: Span) -> PResult<StructDcl> {
     // <identifier>
     let (input, id) = parse_id(input)?;
+
+    if tuple((skip_space_and_comment0, tag(";")))(input).is_ok() {
+        return Ok((input, StructDcl::ForwardDcl(StructForwardDcl(id))));
+    }
 
     let (input, _) = skip_space_and_comment0(input)?;
 
@@ -1156,16 +1190,31 @@ fn parse_struct_def(input: Span) -> PResult<StructDef> {
     };
 
     // "{" <member>* "}"
-    let (input, members) = delimited(lparen("{"), many0(parse_member), rparen("}"))(input)?;
+    let (input, (_, members)) = tuple((lparen("{"), members))(input)?;
 
     Ok((
         input,
-        StructDef {
+        StructDcl::Def(StructDef {
             id,
             members,
             inheritance,
-        },
+        }),
     ))
+}
+
+fn members(mut input: Span) -> PResult<Vec<Member>> {
+    let mut result = Vec::new();
+
+    loop {
+        if let Ok((i, _)) = rparen("}")(input) {
+            return Ok((i, result));
+        }
+
+        let (i, member) = parse_member(input)?;
+        result.push(member);
+
+        input = i;
+    }
 }
 
 /// ```text
@@ -1201,38 +1250,24 @@ pub fn parse_member(input: Span) -> PResult<Member> {
 }
 
 /// ```text
-/// (48) <struct_forward_dcl> ::= "struct" <identifier>
-/// ```
-fn parse_struct_forward_dcl(input: Span) -> PResult<StructForwardDcl> {
-    let (input, id) = parse_id(input)?;
-
-    Ok((input, StructForwardDcl(id)))
-}
-
-/// ```text
 /// (49) <union_dcl> ::= <union_def>
 ///                    | <union_forward_dcl>
 /// ```
 fn parse_union_dcl(input: Span) -> PResult<UnionDcl> {
-    fn union_def(input: Span) -> PResult<UnionDcl> {
-        let (input, def) = parse_union_def(input)?;
-        Ok((input, UnionDcl::Def(def)))
-    }
-
-    fn forward_dcl(input: Span) -> PResult<UnionDcl> {
-        let (input, dcl) = parse_union_forward_dcl(input)?;
-        Ok((input, UnionDcl::ForwardDcl(dcl)))
-    }
-
-    alt((union_def, forward_dcl))(input)
+    parse_union(input)
 }
 
 /// ```text
 /// (50) <union_def> ::= "union" <identifier> "switch" "(" <switch_type_spec> ")" "{" <switch_body> "}"
+/// (56) <union_forward_dcl> ::= "union" <identifier>
 /// ```
-fn parse_union_def(input: Span) -> PResult<UnionDef> {
+fn parse_union(input: Span) -> PResult<UnionDcl> {
     // <identifier>
     let (input, id) = parse_id(input)?;
+
+    if tuple((skip_space_and_comment0, tag(";")))(input).is_ok() {
+        return Ok((input, UnionDcl::ForwardDcl(UnionForwardDcl(id))));
+    }
 
     // "switch"
     let (input, _) = tuple((skip_space_and_comment1, tag("switch")))(input)?;
@@ -1246,11 +1281,11 @@ fn parse_union_def(input: Span) -> PResult<UnionDef> {
 
     Ok((
         input,
-        UnionDef {
+        UnionDcl::Def(UnionDef {
             id,
             switch_type_spec,
             body,
-        },
+        }),
     ))
 }
 
@@ -1358,15 +1393,6 @@ fn parse_element_spec(input: Span) -> PResult<ElementSpec> {
             declarator,
         },
     ))
-}
-
-/// ```text
-/// (56) <union_forward_dcl> ::= "union" <identifier>
-/// ```
-fn parse_union_forward_dcl(input: Span) -> PResult<UnionForwardDcl> {
-    let (input, id) = parse_id(input)?;
-
-    Ok((input, UnionForwardDcl(id)))
 }
 
 /// ```text

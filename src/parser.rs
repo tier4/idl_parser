@@ -15,7 +15,7 @@ use nom::{
 use nom_greedyerror::GreedyError;
 use nom_locate::LocatedSpan;
 
-type Span<'a> = LocatedSpan<&'a str>;
+pub type Span<'a> = LocatedSpan<&'a str>;
 
 type PResult<'a, OUT> = IResult<Span<'a>, OUT, GreedyError<Span<'a>, ErrorKind>>;
 
@@ -24,8 +24,7 @@ pub fn parse(input: &str) -> PResult<Vec<Definition>> {
 
     let mut result = Vec::new();
     loop {
-        let (i, _) = skip_space_and_comment0(input)?;
-        let (i, m) = core::parse_definition(i)?;
+        let (i, m) = core::parse_definition(input)?;
         let (i, _) = skip_space_and_comment0(i)?;
 
         result.push(m);
@@ -101,6 +100,44 @@ abc */
     }
 
     #[test]
+    fn parser_srv() {
+        let input = r#"
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from example_msg/srv/AddThreeInts.srv
+// generated code does not contain a copyright notice
+
+
+module example_msg {
+    module srv {
+        struct AddThreeInts_Request {
+            int64 a;
+
+            int64 b;
+
+            int64 c;
+        };
+        module AddThreeInts_Response_Constants {
+            const string PLANNING = "Planning";
+        };
+        struct AddThreeInts_Response {
+            int64 sum;
+        };
+    };
+};"#;
+
+        match parse(input).finish() {
+            Ok((_, definitions)) => {
+                println!("{:?}", definitions);
+            }
+            Err(e) => {
+                let msg = convert_error(input, e);
+                eprintln!("{msg}");
+                panic!();
+            }
+        }
+    }
+
+    #[test]
     fn parser_complex() {
         let input = r#"
 module example_msg {
@@ -115,8 +152,7 @@ module example_msg {
             const string PLANNING = "Planning";
         };
 
-        @verbatim (language="comment", text=
-        "http://wiki.ros.org/msg")
+        @verbatim (language="comment", text="http://wiki.ros.org/msg")
         struct StdMsg {
             boolean a;
 

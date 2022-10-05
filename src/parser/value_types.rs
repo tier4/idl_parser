@@ -29,42 +29,32 @@ use nom_greedyerror::AsStr;
 ///                    | <value_forward_dcl>
 /// ```
 pub fn parse_value_dcl(input: Span) -> PResult<ValueDcl> {
-    fn def(input: Span) -> PResult<ValueDcl> {
-        let (input, result) = parse_value_def(input)?;
-        Ok((input, ValueDcl::Def(result)))
-    }
-
-    fn forward_dcl(input: Span) -> PResult<ValueDcl> {
-        let (input, result) = parse_value_forward_dcl(input)?;
-        Ok((input, ValueDcl::ForwardDcl(result)))
-    }
-
-    alt((def, forward_dcl))(input)
+    parse_value(input)
 }
 
 /// ```text
 /// (100) <value_def> ::= <value_header> "{" <value_element>* "}"
-/// ```
-fn parse_value_def(input: Span) -> PResult<ValueDef> {
-    let (input, header) = parse_value_header(input)?;
-    let (input, elements) = delimited(lparen("{"), many0(parse_value_element), rparen("}"))(input)?;
-    Ok((input, ValueDef { header, elements }))
-}
-
-/// ```text
 /// (101) <value_header> ::= <value_kind> <identifier> [ <value_inheritance_spec> ]
-/// ```
-fn parse_value_header(input: Span) -> PResult<ValueHeader> {
-    let (input, id) = parse_id(input)?;
-    let (input, inheritance) = parse_value_inheritance_spec(input)?;
-    Ok((input, ValueHeader { id, inheritance }))
-}
-
-/// ```text
 /// (102) <value_kind> ::= "valuetype"
+/// (110) <value_forward_dcl> ::= <value_kind> <identifier>
 /// ```
-fn parse_value_kind(input: Span) -> PResult<Span> {
-    tag("valuetype")(input)
+fn parse_value(input: Span) -> PResult<ValueDcl> {
+    let (input, id) = parse_id(input)?;
+
+    if tuple((skip_space_and_comment0, tag(";")))(input).is_ok() {
+        return Ok((input, ValueDcl::ForwardDcl(ValueForwardDcl(id))));
+    }
+
+    let (input, inheritance) = parse_value_inheritance_spec(input)?;
+
+    let (input, elements) = delimited(lparen("{"), many0(parse_value_element), rparen("}"))(input)?;
+    Ok((
+        input,
+        ValueDcl::Def(ValueDef {
+            header: ValueHeader { id, inheritance },
+            elements,
+        }),
+    ))
 }
 
 /// ```text
@@ -195,12 +185,4 @@ fn parse_init_param_dcl(input: Span) -> PResult<InitParamDcl> {
     let (input, id) = parse_simple_declarator(input)?;
 
     Ok((input, InitParamDcl { type_spec, id }))
-}
-
-/// ```text
-/// (110) <value_forward_dcl> ::= <value_kind> <identifier>
-/// ```
-fn parse_value_forward_dcl(input: Span) -> PResult<ValueForwardDcl> {
-    let (input, id) = parse_id(input)?;
-    Ok((input, ValueForwardDcl(id)))
 }

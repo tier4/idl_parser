@@ -113,18 +113,38 @@ fn parse_compoent_export(input: Span) -> PResult<ComponentExport> {
         Ok((input, ComponentExport::Uses(result)))
     }
 
-    fn attr(input: Span) -> PResult<ComponentExport> {
-        let (input, result) = parse_attr_dcl(input)?;
+    fn attr<'a>(head: &str, input: Span<'a>) -> PResult<'a, ComponentExport> {
+        let (input, result) = parse_attr_dcl(head, input)?;
         Ok((input, ComponentExport::Attr(result)))
     }
 
-    fn port(input: Span) -> PResult<ComponentExport> {
-        let (input, result) = parse_port_dcl(input)?;
+    fn port<'a>(head: &str, input: Span<'a>) -> PResult<'a, ComponentExport> {
+        let (input, result) = parse_port_dcl(head, input)?;
         Ok((input, ComponentExport::Port(result)))
     }
 
     let (input, _) = skip_space_and_comment0(input)?;
-    let (input, result) = alt((provides, uses, attr, port))(input)?;
+
+    let (input, (head, _)) = tuple((
+        alt((
+            tag("provides"),
+            tag("uses"),
+            tag("readonly"),
+            tag("attribute"),
+            tag("port"),
+            tag("mirrorport"),
+        )),
+        skip_space_and_comment1,
+    ))(input)?;
+
+    let (input, result) = match head.as_str() {
+        "provides" => provides(input)?,
+        "uses" => uses(input)?,
+        "readonly" | "atrribute" => attr(head.as_str(), input)?,
+        "port" | "mirrorport" => port(head.as_str(), input)?,
+        _ => unreachable!(),
+    };
+
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, result))
@@ -134,7 +154,6 @@ fn parse_compoent_export(input: Span) -> PResult<ComponentExport> {
 /// (141) <provides_dcl> ::= "provides" <interface_type> <identifier>
 /// ```
 fn parse_provides_dcl(input: Span) -> PResult<ProvidesDcl> {
-    let (input, _) = tuple((tag("provides"), skip_space_and_comment1))(input)?;
     let (input, interface_type) = parse_interface_type(input)?;
     let (input, (_, id)) = tuple((skip_space_and_comment1, parse_id))(input)?;
 
@@ -153,13 +172,8 @@ fn parse_interface_type(input: Span) -> PResult<InterfaceType> {
 /// (143) <uses_dcl> ::= "uses" <interface_type> <identifier>
 /// ```
 fn parse_uses_dcl(input: Span) -> PResult<UsesDcl> {
-    let (input, (_, _, interface_type, _, id)) = tuple((
-        tag("uses"),
-        skip_space_and_comment1,
-        parse_interface_type,
-        skip_space_and_comment1,
-        parse_id,
-    ))(input)?;
+    let (input, (interface_type, _, id)) =
+        tuple((parse_interface_type, skip_space_and_comment1, parse_id))(input)?;
 
     Ok((input, UsesDcl { interface_type, id }))
 }
@@ -285,36 +299,22 @@ fn parse_factory_param_dcl(input: Span) -> PResult<FactoryParamDcl> {
 /// ```text
 /// (172) <porttype_dcl> ::= <porttype_def>
 ///                        | <porttype_forward_dcl>
-/// ```
-pub fn parse_porttype_dcl(input: Span) -> PResult<PortTypeDcl> {
-    fn def(input: Span) -> PResult<PortTypeDcl> {
-        let (input, result) = parse_porttype_def(input)?;
-        Ok((input, PortTypeDcl::Def(result)))
-    }
-
-    fn forward_dcl(input: Span) -> PResult<PortTypeDcl> {
-        let (input, result) = parse_porttype_forward_dcl(input)?;
-        Ok((input, PortTypeDcl::ForwardDcl(result)))
-    }
-
-    alt((def, forward_dcl))(input)
-}
-
-/// ```text
 /// (173) <porttype_forward_dcl> ::= "porttype" <identifier>
-/// ```
-fn parse_porttype_forward_dcl(input: Span) -> PResult<PortTypeForwardDcl> {
-    let (input, id) = parse_id(input)?;
-    Ok((input, PortTypeForwardDcl(id)))
-}
-
-/// ```text
 /// (174) <porttype_def> ::= "porttype" <identifier> "{" <port_body> "}"
 /// ```
-fn parse_porttype_def(input: Span) -> PResult<PortTypeDef> {
+pub fn parse_porttype_dcl(input: Span) -> PResult<PortTypeDcl> {
+    parse_porttype(input)
+}
+
+fn parse_porttype(input: Span) -> PResult<PortTypeDcl> {
     let (input, id) = parse_id(input)?;
+
+    if tuple((skip_space_and_comment0, tag(";")))(input).is_ok() {
+        return Ok((input, PortTypeDcl::ForwardDcl(PortTypeForwardDcl(id))));
+    }
+
     let (input, body) = delimited(lparen("{"), parse_port_body, rparen("}"))(input)?;
-    Ok((input, PortTypeDef { id, body }))
+    Ok((input, PortTypeDcl::Def(PortTypeDef { id, body })))
 }
 
 /// ```text
@@ -348,12 +348,23 @@ fn parse_port_ref(input: Span) -> PResult<PortRef> {
         Ok((input, PortRef::Uses(result)))
     }
 
-    fn port(input: Span) -> PResult<PortRef> {
-        let (input, result) = parse_port_dcl(input)?;
+    fn port<'a>(head: &str, input: Span<'a>) -> PResult<'a, PortRef> {
+        let (input, result) = parse_port_dcl(head, input)?;
         Ok((input, PortRef::Port(result)))
     }
 
-    let (input, result) = alt((provides, uses, port))(input)?;
+    let (input, (head, _)) = tuple((
+        alt((tag("provides"), tag("uses"), tag("port"), tag("mirrorport"))),
+        skip_space_and_comment1,
+    ))(input)?;
+
+    let (input, result) = match head.as_str() {
+        "provides" => provides(input)?,
+        "uses" => uses(input)?,
+        "port" | "mirrorport" => port(head.as_str(), input)?,
+        _ => unreachable!(),
+    };
+
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
     Ok((input, result))
@@ -369,29 +380,32 @@ fn parse_port_export(input: Span) -> PResult<PortExport> {
         Ok((input, PortExport::PortRef(result)))
     }
 
-    fn attr(input: Span) -> PResult<PortExport> {
-        let (input, result) = parse_attr_dcl(input)?;
+    fn attr<'a>(head: &str, input: Span<'a>) -> PResult<'a, PortExport> {
+        let (input, result) = parse_attr_dcl(head, input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, PortExport::Attr(result)))
     }
 
     let (input, _) = skip_space_and_comment0(input)?;
-    alt((port_ref, attr))(input)
+    if let Ok((input, (head, _))) = tuple((
+        alt((tag("readonly"), tag("attribute"))),
+        skip_space_and_comment1,
+    ))(input)
+    {
+        attr(head.as_str(), input)
+    } else {
+        port_ref(input)
+    }
 }
 
 /// ```text
 /// (178) <port_dcl> ::= { "port" | "mirrorport" } <scoped_name> <identifier>
 /// ```
-fn parse_port_dcl(input: Span) -> PResult<PortDcl> {
-    let (input, (p, _)) = tuple((
-        alt((tag("port"), tag("mirrorport"))),
-        skip_space_and_comment1,
-    ))(input)?;
-
+fn parse_port_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, PortDcl> {
     let (input, (name, _, id)) =
         tuple((parse_scoped_name, skip_space_and_comment1, parse_id))(input)?;
 
-    match p.as_str() {
+    match head.as_str() {
         "port" => Ok((input, PortDcl::Port(name, id))),
         "mirrorport" => Ok((input, PortDcl::MirrorPort(name, id))),
         _ => unreachable!(),
@@ -445,12 +459,20 @@ fn parse_connector_export(input: Span) -> PResult<ConnectorExport> {
         Ok((input, ConnectorExport::PortRef(result)))
     }
 
-    fn attr(input: Span) -> PResult<ConnectorExport> {
-        let (input, result) = parse_attr_dcl(input)?;
+    fn attr<'a>(head: &str, input: Span<'a>) -> PResult<'a, ConnectorExport> {
+        let (input, result) = parse_attr_dcl(head, input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(":")))(input)?;
         Ok((input, ConnectorExport::Attr(result)))
     }
 
     let (input, _) = skip_space_and_comment0(input)?;
-    alt((port_ref, attr))(input)
+    if let Ok((input, (head, _))) = tuple((
+        alt((tag("readonly"), tag("attribute"))),
+        skip_space_and_comment1,
+    ))(input)
+    {
+        attr(head.as_str(), input)
+    } else {
+        port_ref(input)
+    }
 }

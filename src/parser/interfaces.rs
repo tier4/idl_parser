@@ -38,44 +38,22 @@ pub fn parse_except_dcl(input: Span) -> PResult<ExceptDcl> {
 ///                        | <interface_forward_dcl>
 /// ```
 pub fn parse_interface_dcl(input: Span) -> PResult<InterfaceDcl> {
-    fn def(input: Span) -> PResult<InterfaceDcl> {
-        let (input, result) = parse_interface_def(input)?;
-        Ok((input, InterfaceDcl::Def(result)))
-    }
-
-    fn forward_dcl(input: Span) -> PResult<InterfaceDcl> {
-        let (input, result) = parse_interface_forward_dcl(input)?;
-        Ok((input, InterfaceDcl::ForwardDcl(result)))
-    }
-
-    alt((def, forward_dcl))(input)
+    parse_interface(input)
 }
 
 /// ```text
 /// (74) <interface_def> ::= <interface_header> "{" <interface_body> "}"
-/// ```
-fn parse_interface_def(input: Span) -> PResult<InterfaceDef> {
-    let (input, header) = parse_interface_header(input)?;
-
-    let (input, body) = delimited(lparen("{"), parse_interface_body, rparen("}"))(input)?;
-
-    Ok((input, InterfaceDef { header, body }))
-}
-
-/// ```text
 /// (75) <interface_forward_dcl> ::= <interface_kind> <identifier>
-/// ```
-fn parse_interface_forward_dcl(input: Span) -> PResult<InterfaceForwardDcl> {
-    let (input, id) = parse_id(input)?;
-    Ok((input, InterfaceForwardDcl(id)))
-}
-
-/// ```text
 /// (76) <interface_header> ::= <interface_kind> <identifier> [ <interface_inheritance_spec> ]
+/// (77) <interface_kind> ::= "interface"
 /// (78) <interface_inheritance_spec> ::= ":" <interface_name> { "," <interface_name> }*
 /// ```
-fn parse_interface_header(input: Span) -> PResult<InterfaceHeader> {
+fn parse_interface(input: Span) -> PResult<InterfaceDcl> {
     let (input, id) = parse_id(input)?;
+
+    if tuple((skip_space_and_comment0, tag(";")))(input).is_ok() {
+        return Ok((input, InterfaceDcl::ForwardDcl(InterfaceForwardDcl(id))));
+    }
 
     let (input, inheritance) = if let Ok((input, _)) =
         tuple((skip_space_and_comment0, tag(":")))(input)
@@ -86,14 +64,11 @@ fn parse_interface_header(input: Span) -> PResult<InterfaceHeader> {
         (input, None)
     };
 
-    Ok((input, InterfaceHeader { id, inheritance }))
-}
+    let header = InterfaceHeader { id, inheritance };
 
-/// ```text
-/// (77) <interface_kind> ::= "interface"
-/// ```
-fn parse_interface_kind(input: Span) -> PResult<Span> {
-    tag("interface")(input)
+    let (input, body) = delimited(lparen("{"), parse_interface_body, rparen("}"))(input)?;
+
+    Ok((input, InterfaceDcl::Def(InterfaceDef { header, body })))
 }
 
 /// ```text
@@ -124,8 +99,8 @@ pub fn parse_export(input: Span) -> PResult<Export> {
         Ok((input, Export::Op(op)))
     }
 
-    fn attr(input: Span) -> PResult<Export> {
-        let (input, attr) = parse_attr_dcl(input)?;
+    fn attr<'a>(head: &str, input: Span<'a>) -> PResult<'a, Export> {
+        let (input, attr) = parse_attr_dcl(head, input)?;
         Ok((input, Export::Attr(attr)))
     }
 
@@ -155,6 +130,8 @@ pub fn parse_export(input: Span) -> PResult<Export> {
             tag("typedef"),
             tag("const"),
             tag("exception"),
+            tag("readonly"),
+            tag("attribute"),
         )),
         skip_space_and_comment1,
     ))(input)
@@ -162,13 +139,14 @@ pub fn parse_export(input: Span) -> PResult<Export> {
         let (input, result) = match head.as_str() {
             "const" => const_dcl(input)?,
             "except" => except(input)?,
+            "readonly" | "attribute" => attr(head.as_str(), input)?,
             _ => type_dcl(head.as_str(), input)?,
         };
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, result))
     } else {
         let (input, _) = skip_space_and_comment0(input)?;
-        let (input, result) = alt((op, attr))(input)?;
+        let (input, result) = op(input)?;
         let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
         Ok((input, result))
     }
@@ -209,11 +187,9 @@ fn parse_op_dcl(input: Span) -> PResult<OpDcl> {
 fn parse_op_type_spec(input: Span) -> PResult<OpTypeSpec> {
     let (input, type_spec) = parse_type_spec(input)?;
 
-    if let TypeSpec::ScopedName(name) = &type_spec {
-        if let ScopedName::Absolute(s) = name {
-            if s.len() == 1 && s[0] == "void" {
-                return Ok((input, OpTypeSpec::Void));
-            }
+    if let TypeSpec::ScopedName(ScopedName::Absolute(name)) = &type_spec {
+        if name.len() == 1 && name[0] == "void" {
+            return Ok((input, OpTypeSpec::Void));
         }
     }
 
@@ -281,7 +257,7 @@ pub fn parse_raises_expr(input: Span) -> PResult<Raises> {
 /// (88) <attr_dcl> ::= <readonly_attr_spec>
 ///                   | <attr_spec>
 /// ```
-pub fn parse_attr_dcl(input: Span) -> PResult<AttrDcl> {
+pub fn parse_attr_dcl<'a>(head: &str, input: Span<'a>) -> PResult<'a, AttrDcl> {
     fn readonly(input: Span) -> PResult<AttrDcl> {
         let (input, spec) = parse_readonly_attr_spec(input)?;
         Ok((input, AttrDcl::Readonly(spec)))
@@ -292,19 +268,18 @@ pub fn parse_attr_dcl(input: Span) -> PResult<AttrDcl> {
         Ok((input, AttrDcl::ReadWrite(spec)))
     }
 
-    alt((readonly, read_write))(input)
+    match head {
+        "readonly" => readonly(input),
+        "attribute" => read_write(input),
+        _ => unreachable!(),
+    }
 }
 
 /// ```text
 /// (89) <readonly_attr_spec> ::= "readonly" "attribute" <type_spec> <readonly_attr_declarator>
 /// ```
 fn parse_readonly_attr_spec(input: Span) -> PResult<ReadonlyAttrSpec> {
-    let (input, _) = tuple((
-        tag("readonly"),
-        skip_space_and_comment1,
-        tag("attribute"),
-        skip_space_and_comment1,
-    ))(input)?;
+    let (input, _) = tuple((tag("attribute"), skip_space_and_comment1))(input)?;
 
     let (input, type_spec) = parse_type_spec(input)?;
 
@@ -344,7 +319,6 @@ fn parse_readonly_attr_declarator(input: Span) -> PResult<ReadonlyAttrDeclarator
 /// (91) <attr_spec> ::= "attribute" <type_spec> <attr_declarator>
 /// ```
 fn parse_attr_spec(input: Span) -> PResult<AttrSpec> {
-    let (input, _) = tuple((tag("attribute"), skip_space_and_comment1))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment1(input)?;

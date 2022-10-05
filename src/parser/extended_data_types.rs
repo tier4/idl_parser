@@ -1,7 +1,7 @@
 use super::{
     core::{
         delimiter, lparen, parse_const_expr, parse_id, parse_int_words, parse_scoped_name,
-        parse_type_spec, rparen, skip_space_and_comment0, skip_space_and_comment1,
+        parse_type_spec, rparen, skip_space_and_comment0,
     },
     PResult, Span,
 };
