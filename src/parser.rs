@@ -6,7 +6,7 @@ mod interfaces;
 mod template;
 mod value_types;
 
-use crate::{expr::Definition, parser::core::skip_space_and_comment0};
+use crate::{expr::AnnotationAndDef, parser::core::skip_space_and_comment0};
 use nom::{
     combinator::eof,
     error::{Error, ErrorKind},
@@ -19,7 +19,7 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 
 type PResult<'a, OUT> = IResult<Span<'a>, OUT, GreedyError<Span<'a>, ErrorKind>>;
 
-pub fn parse(input: &str) -> PResult<Vec<Definition>> {
+pub fn parse(input: &str) -> PResult<Vec<AnnotationAndDef>> {
     let mut input = Span::new(input);
 
     let mut result = Vec::new();

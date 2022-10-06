@@ -2,11 +2,12 @@ use super::{annotations::parse_annotation_apps, PResult, Span};
 use crate::{
     character::{BELL, BS, CR, CR_S, FF, HT, HT_S, LF, LF_S, VT, VT_S},
     expr::{
-        AnyDeclarator, ArrayDeclarator, Case, CaseLabel, ConstDcl, ConstExpr, ConstType,
-        ConstrTypeDcl, Definition, ElementSpec, EnumDcl, FixedPoint, FixedPtType, Literal, Member,
-        Module, NativeDcl, PrimitiveType, ScopedName, SequenceType, StringType, StructDcl,
-        StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec, TypeDcl, TypeSpec, Typedef,
-        TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl, WStringType,
+        AnnotationAndDef, AnyDeclarator, ArrayDeclarator, Case, CaseLabel, ConstDcl, ConstExpr,
+        ConstType, ConstrTypeDcl, Definition, ElementSpec, EnumDcl, FixedPoint, FixedPtType,
+        Literal, Member, Module, NativeDcl, PrimitiveType, ScopedName, SequenceType, StringType,
+        StructDcl, StructDef, StructForwardDcl, SwitchTypeSpec, TemplateTypeSpec, TypeDcl,
+        TypeSpec, Typedef, TypedefType, UnaryOpExpr, UnionDcl, UnionDef, UnionForwardDcl,
+        WStringType,
     },
     parser::{
         annotations::parse_annotation_dcl,
@@ -134,7 +135,7 @@ pub fn parse_id(input: Span) -> PResult<String> {
 ///
 /// (218) <definition> ::+ <annotaion_dcl> ";"
 /// ```
-pub fn parse_definition(input: Span) -> PResult<Definition> {
+pub fn parse_definition(input: Span) -> PResult<AnnotationAndDef> {
     fn module(input: Span) -> PResult<Definition> {
         let (input, def) = parse_module_dcl(input)?;
         Ok((input, Definition::Module(def)))
@@ -202,11 +203,17 @@ pub fn parse_definition(input: Span) -> PResult<Definition> {
 
     let (input, _) = skip_space_and_comment0(input)?;
 
-    let (input, _annotation) = if tag::<&str, Span, Error<Span>>("@")(input).is_ok() {
+    let (input, annotations) = if tag::<&str, Span, Error<Span>>("@")(input).is_ok() {
         if tuple((tag("annotation"), skip_space_and_comment1))(input).is_ok() {
             let (input, result) = annotation_dcl(input)?;
             let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
-            return Ok((input, result));
+            return Ok((
+                input,
+                AnnotationAndDef {
+                    definition: result,
+                    annotations: None,
+                },
+            ));
         } else {
             let (input, annotation) = parse_annotation_apps(input)?;
             (input, Some(annotation))
@@ -257,7 +264,13 @@ pub fn parse_definition(input: Span) -> PResult<Definition> {
 
     let (input, _) = tuple((skip_space_and_comment0, tag(";")))(input)?;
 
-    Ok((input, result))
+    Ok((
+        input,
+        AnnotationAndDef {
+            definition: result,
+            annotations,
+        },
+    ))
 }
 
 /// ```text
@@ -273,7 +286,7 @@ fn parse_module_dcl(input: Span) -> PResult<Module> {
     Ok((input, Module { id, definitions }))
 }
 
-pub fn definitions(mut input: Span) -> PResult<Vec<Definition>> {
+pub fn definitions(mut input: Span) -> PResult<Vec<AnnotationAndDef>> {
     let mut result = Vec::new();
 
     loop {
@@ -1223,7 +1236,7 @@ fn members(mut input: Span) -> PResult<Vec<Member>> {
 pub fn parse_member(input: Span) -> PResult<Member> {
     let (input, _) = skip_space_and_comment0(input)?;
 
-    let (input, _annotation) = if tag::<&str, Span, Error<Span>>("@")(input).is_ok() {
+    let (input, annotations) = if tag::<&str, Span, Error<Span>>("@")(input).is_ok() {
         let (input, annotation) = parse_annotation_apps(input)?;
         (input, Some(annotation))
     } else {
@@ -1243,6 +1256,7 @@ pub fn parse_member(input: Span) -> PResult<Member> {
     Ok((
         input,
         Member {
+            annotations,
             type_spec,
             declarators,
         },

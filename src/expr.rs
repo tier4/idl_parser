@@ -3,13 +3,19 @@ use num_bigint::BigInt;
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Module {
     pub id: String,
-    pub definitions: Vec<Definition>,
+    pub definitions: Vec<AnnotationAndDef>,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Const {
     pub id: String,
     pub expr: ConstExpr,
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct AnnotationAndDef {
+    pub annotations: Option<Vec<AnnotationAppl>>,
+    pub definition: Definition,
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -189,6 +195,7 @@ pub enum TypeSpec {
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Member {
+    pub annotations: Option<Vec<AnnotationAppl>>,
     pub type_spec: TypeSpec,
     pub declarators: Vec<AnyDeclarator>,
 }
@@ -671,7 +678,7 @@ pub struct TemplateModuleRef {
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum TplDefinition {
-    Definition(Definition),
+    Definition(AnnotationAndDef),
     TemplateModuleRef(TemplateModuleRef),
 }
 
