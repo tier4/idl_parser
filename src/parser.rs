@@ -137,7 +137,21 @@ module example_msg {
                 println!("{:?}", definitions);
             }
             Err(e) => {
-                eprintln!("e");
+                eprintln!("{e}");
+                panic!();
+            }
+        }
+    }
+
+    #[test]
+    fn parse_typedef() {
+        let input = "typedef string<10> string__10__2[2];";
+        match parse(input) {
+            Ok(definitions) => {
+                println!("{:?}", definitions);
+            }
+            Err(e) => {
+                eprintln!("{e}");
                 panic!();
             }
         }

@@ -1493,14 +1493,13 @@ fn parse_type_declarator(input: Span) -> PResult<Typedef> {
             tag("bitset"),
             tag("bitmask"),
             tag("native"),
-            tag("typedef"),
         )),
         skip_space_and_comment1,
     ))(input)
     {
         constr(head.as_str(), input)?
     } else {
-        alt((simple, template))(input)?
+        alt((template, simple))(input)?
     };
 
     let (input, _) = skip_space_and_comment1(input)?;
