@@ -15,8 +15,7 @@ use nom::{
 use nom_greedyerror::{convert_error, GreedyError};
 use nom_locate::LocatedSpan;
 
-pub type Span<'a> = LocatedSpan<&'a str>;
-
+type Span<'a> = LocatedSpan<&'a str>;
 type PResult<'a, OUT> = IResult<Span<'a>, OUT, GreedyError<Span<'a>, ErrorKind>>;
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
