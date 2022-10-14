@@ -437,11 +437,7 @@ fn parse_xor_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
 ///                   | <and_expr> "&" <shift_expr>
 /// ```
 fn parse_and_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
-    let (input, left) = if shift {
-        parse_shift_expr(input, shift)?
-    } else {
-        parse_add_expr(input, shift)?
-    };
+    let (input, left) = parse_shift_expr(input, shift)?;
 
     if let Ok((input, _)) = delimiter("&")(input) {
         let (input, right) = parse_and_expr(input, shift)?;
@@ -459,7 +455,11 @@ fn parse_and_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
 fn parse_shift_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
     let (input, left) = parse_add_expr(input, shift)?;
 
-    if let Ok((input, (_, op, _))) = alt((delimiter(">>"), delimiter("<<")))(input) {
+    if let Ok((input, (_, op, _))) = if shift {
+        alt((delimiter(">>"), delimiter("<<")))(input)
+    } else {
+        delimiter("<<")(input)
+    } {
         let (input, right) = parse_shift_expr(input, shift)?;
 
         match op.as_str() {
@@ -1577,7 +1577,7 @@ mod tests {
         let input = Span::new("1*3+4");
         parse_const_expr(input, true).unwrap();
 
-        let input = Span::new("1 >> 4 >>");
+        let input = Span::new("1 >> 4");
         parse_const_expr(input, true).unwrap();
     }
 

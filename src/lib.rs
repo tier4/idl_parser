@@ -5,7 +5,7 @@
 /// # Example
 ///
 /// ```
-/// use t4_idl_parser::{parse, Span};
+/// use t4_idl_parser::parse;
 /// use nom_greedyerror::convert_error;
 ///
 /// let input = r#"
