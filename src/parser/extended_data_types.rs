@@ -42,7 +42,11 @@ pub fn parse_map_type(input: Span) -> PResult<MapType> {
         ));
     }
 
-    let (input, size) = delimited(skip_space_and_comment0, parse_const_expr, rparen(">"))(input)?;
+    let (input, size) = delimited(
+        skip_space_and_comment0,
+        |i| parse_const_expr(i, false),
+        rparen(">"),
+    )(input)?;
 
     Ok((
         input,
@@ -91,7 +95,7 @@ fn parse_bitfield(input: Span) -> PResult<Bitfield> {
 fn parse_bitfield_spec(input: Span) -> PResult<BitfieldSpec> {
     let (input, _) = tuple((tag("bitfield"), lparen("<")))(input)?;
 
-    let (input, bits) = parse_const_expr(input)?;
+    let (input, bits) = parse_const_expr(input, false)?;
     let (input, _) = skip_space_and_comment0(input)?;
 
     let (input, c) = alt((tag(">"), tag(",")))(input)?;

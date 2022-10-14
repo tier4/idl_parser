@@ -335,7 +335,7 @@ pub fn parse_const_dcl(input: Span) -> PResult<ConstDcl> {
     let (input, _) = delimiter("=")(input)?;
 
     // <const_expr>
-    let (input, expr) = parse_const_expr(input)?;
+    let (input, expr) = parse_const_expr(input, true)?;
 
     Ok((
         input,
@@ -398,19 +398,19 @@ pub fn parse_const_type(input: Span) -> PResult<ConstType> {
 /// ( 7) <const_expr> ::= <or_expr>
 /// (19) <positive_int_const> ::= <const_expr>
 /// ```
-pub fn parse_const_expr(input: Span) -> PResult<ConstExpr> {
-    parse_or_expr(input)
+pub fn parse_const_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    parse_or_expr(input, shift)
 }
 
 /// ```text
 /// (8) <or_expr> ::= <xor_expr>
 ///                 | <or_expr> "|" <xor_expr>
 /// ```
-fn parse_or_expr(input: Span) -> PResult<ConstExpr> {
-    let (input, left) = parse_xor_expr(input)?;
+fn parse_or_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    let (input, left) = parse_xor_expr(input, shift)?;
 
     if let Ok((input, _)) = delimiter("|")(input) {
-        let (input, right) = parse_or_expr(input)?;
+        let (input, right) = parse_or_expr(input, shift)?;
         Ok((input, ConstExpr::Or(Box::new(left), Box::new(right))))
     } else {
         Ok((input, left))
@@ -421,11 +421,11 @@ fn parse_or_expr(input: Span) -> PResult<ConstExpr> {
 /// (9) <xor_expr> ::= <and_expr>
 ///                  | <xor_expr> "^" <and_expr>
 /// ```
-fn parse_xor_expr(input: Span) -> PResult<ConstExpr> {
-    let (input, left) = parse_and_expr(input)?;
+fn parse_xor_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    let (input, left) = parse_and_expr(input, shift)?;
 
     if let Ok((input, _)) = delimiter("^")(input) {
-        let (input, right) = parse_xor_expr(input)?;
+        let (input, right) = parse_xor_expr(input, shift)?;
         Ok((input, ConstExpr::Xor(Box::new(left), Box::new(right))))
     } else {
         Ok((input, left))
@@ -436,11 +436,15 @@ fn parse_xor_expr(input: Span) -> PResult<ConstExpr> {
 /// (10) <and_expr> ::= <shift_expr>
 ///                   | <and_expr> "&" <shift_expr>
 /// ```
-fn parse_and_expr(input: Span) -> PResult<ConstExpr> {
-    let (input, left) = parse_shift_expr(input)?;
+fn parse_and_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    let (input, left) = if shift {
+        parse_shift_expr(input, shift)?
+    } else {
+        parse_add_expr(input, shift)?
+    };
 
     if let Ok((input, _)) = delimiter("&")(input) {
-        let (input, right) = parse_and_expr(input)?;
+        let (input, right) = parse_and_expr(input, shift)?;
         Ok((input, ConstExpr::And(Box::new(left), Box::new(right))))
     } else {
         Ok((input, left))
@@ -452,11 +456,11 @@ fn parse_and_expr(input: Span) -> PResult<ConstExpr> {
 ///                     | <shift_expr> ">>" <add_expr>
 ///                     | <shift_expr> "<<" <add_expr>
 /// ```
-fn parse_shift_expr(input: Span) -> PResult<ConstExpr> {
-    let (input, left) = parse_add_expr(input)?;
+fn parse_shift_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    let (input, left) = parse_add_expr(input, shift)?;
 
     if let Ok((input, (_, op, _))) = alt((delimiter(">>"), delimiter("<<")))(input) {
-        let (input, right) = parse_shift_expr(input)?;
+        let (input, right) = parse_shift_expr(input, shift)?;
 
         match op.as_str() {
             ">>" => Ok((input, ConstExpr::RShift(Box::new(left), Box::new(right)))),
@@ -473,11 +477,11 @@ fn parse_shift_expr(input: Span) -> PResult<ConstExpr> {
 ///                   | <add_expr> "+" <mult_expr>
 ///                   | <add_expr> "-" <mult_expr>
 /// ```
-fn parse_add_expr(input: Span) -> PResult<ConstExpr> {
-    let (input, left) = parse_mult_expr(input)?;
+fn parse_add_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    let (input, left) = parse_mult_expr(input, shift)?;
 
     if let Ok((input, (_, op, _))) = alt((delimiter("+"), delimiter("-")))(input) {
-        let (input, right) = parse_add_expr(input)?;
+        let (input, right) = parse_add_expr(input, shift)?;
 
         match op.as_str() {
             "+" => Ok((input, ConstExpr::Add(Box::new(left), Box::new(right)))),
@@ -495,11 +499,11 @@ fn parse_add_expr(input: Span) -> PResult<ConstExpr> {
 ///                    | <mult_expr> "/" <unary_expr>
 ///                    | <mult_expr> "%" <unary_expr>
 /// ```
-fn parse_mult_expr(input: Span) -> PResult<ConstExpr> {
-    let (input, left) = parse_unary_expr(input)?;
+fn parse_mult_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
+    let (input, left) = parse_unary_expr(input, shift)?;
 
     if let Ok((input, (_, op, _))) = alt((delimiter("*"), delimiter("/"), delimiter("%")))(input) {
-        let (input, right) = parse_mult_expr(input)?;
+        let (input, right) = parse_mult_expr(input, shift)?;
 
         match op.as_str() {
             "*" => Ok((input, ConstExpr::Mul(Box::new(left), Box::new(right)))),
@@ -517,7 +521,7 @@ fn parse_mult_expr(input: Span) -> PResult<ConstExpr> {
 ///                     | <primary_expr>
 /// (15) <unary_operator> ::= "-" | "+" | "~"
 /// ```
-fn parse_unary_expr(input: Span) -> PResult<ConstExpr> {
+fn parse_unary_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
     let (input, _) = skip_space_and_comment0(input)?;
 
     let (input, op) = if let Ok((input, op)) =
@@ -529,7 +533,7 @@ fn parse_unary_expr(input: Span) -> PResult<ConstExpr> {
     };
 
     let (input, _) = skip_space_and_comment0(input)?;
-    let (input, expr) = parse_primary_expr(input)?;
+    let (input, expr) = parse_primary_expr(input, shift)?;
 
     let expr = match op.as_str() {
         "-" => UnaryOpExpr::Minus(Box::new(expr)),
@@ -547,7 +551,7 @@ fn parse_unary_expr(input: Span) -> PResult<ConstExpr> {
 ///                       | <literal>
 ///                       | "(" <const_expr> ")"
 /// ```
-fn parse_primary_expr(input: Span) -> PResult<ConstExpr> {
+fn parse_primary_expr(input: Span, shift: bool) -> PResult<ConstExpr> {
     fn expr_literal(input: Span) -> PResult<ConstExpr> {
         let (input, literal) = parse_literal(input)?;
         Ok((input, ConstExpr::Literal(literal)))
@@ -561,7 +565,7 @@ fn parse_primary_expr(input: Span) -> PResult<ConstExpr> {
     alt((
         expr_literal,
         expr_scoped_name,
-        delimited(lparen("("), parse_const_expr, rparen(")")),
+        delimited(lparen("("), |i| parse_const_expr(i, shift), rparen(")")),
     ))(input)
 }
 
@@ -1046,7 +1050,7 @@ fn parse_template_type_spec(input: Span) -> PResult<TemplateTypeSpec> {
 ///                        | "sequence" "<" <type_spec> ">"
 /// ```
 pub fn parse_sequence_type(input: Span) -> PResult<SequenceType> {
-    let (input, _) = tuple((tag("sequence"), lparen("<")))(input)?;
+    let (input, _) = tuple((tag("sequence"), skip_space_and_comment0, lparen("<")))(input)?;
     let (input, type_spec) = parse_type_spec(input)?;
 
     let (input, _) = skip_space_and_comment0(input)?;
@@ -1055,7 +1059,7 @@ pub fn parse_sequence_type(input: Span) -> PResult<SequenceType> {
     match c.as_str() {
         "," => {
             let (input, _) = skip_space_and_comment0(input)?;
-            let (input, expr) = parse_const_expr(input)?;
+            let (input, expr) = parse_const_expr(input, false)?;
             let (input, _) = rparen(">")(input)?;
             Ok((input, SequenceType::Limited(type_spec, expr)))
         }
@@ -1070,7 +1074,8 @@ pub fn parse_sequence_type(input: Span) -> PResult<SequenceType> {
 /// "<" <positive_int_const> ">"
 /// ```
 fn parse_max_size(input: Span) -> PResult<ConstExpr> {
-    delimited(lparen("<"), parse_const_expr, rparen(">"))(input)
+    let (input, expr) = delimited(lparen("<"), |i| parse_const_expr(i, false), rparen(">"))(input)?;
+    Ok((input, expr))
 }
 
 /// ```text
@@ -1103,11 +1108,11 @@ fn parse_wide_string_type(input: Span) -> PResult<WStringType> {
 fn parse_fixed_pt_type(input: Span) -> PResult<FixedPtType> {
     let (input, _) = tuple((tag("fixed"), lparen("<")))(input)?;
 
-    let (input, total_digits) = parse_const_expr(input)?;
+    let (input, total_digits) = parse_const_expr(input, false)?;
 
     let (input, _) = delimiter(",")(input)?;
 
-    let (input, fractional_digits) = parse_const_expr(input)?;
+    let (input, fractional_digits) = parse_const_expr(input, false)?;
 
     let (input, _) = rparen(">")(input)?;
 
@@ -1375,7 +1380,7 @@ fn parse_case_label(input: Span) -> PResult<CaseLabel> {
     fn case(input: Span) -> PResult<CaseLabel> {
         let (input, _) = tuple((tag("case"), skip_space_and_comment1))(input)?;
 
-        let (input, expr) = parse_const_expr(input)?;
+        let (input, expr) = parse_const_expr(input, true)?;
 
         let (input, _) = tuple((skip_space_and_comment0, tag(":")))(input)?;
 
@@ -1437,7 +1442,7 @@ fn parse_enumerator(input: Span) -> PResult<String> {
 /// (60) <fixed_array_size> ::= "[" <positive_int_const> "]"
 /// ```
 fn parse_fixed_array_size(input: Span) -> PResult<ConstExpr> {
-    delimited(lparen("["), parse_const_expr, rparen("]"))(input)
+    delimited(lparen("["), |i| parse_const_expr(i, true), rparen("]"))(input)
 }
 
 /// ```text
@@ -1557,6 +1562,24 @@ mod tests {
     use crate::expr::*;
     use num_bigint::BigInt;
     use num_traits::FromPrimitive;
+
+    #[test]
+    fn expr() {
+        let input = Span::new("1 >> 3");
+        parse_const_expr(input, true).unwrap();
+
+        let input = Span::new("1+3");
+        parse_const_expr(input, true).unwrap();
+
+        let input = Span::new("1+-3");
+        parse_const_expr(input, true).unwrap();
+
+        let input = Span::new("1*3+4");
+        parse_const_expr(input, true).unwrap();
+
+        let input = Span::new("1 >> 4 >>");
+        parse_const_expr(input, true).unwrap();
+    }
 
     #[test]
     fn literal() {

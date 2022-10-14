@@ -158,6 +158,20 @@ module example_msg {
     }
 
     #[test]
+    fn parse_sequence() {
+        let input = "module a { struct b { sequence<string<10>> dynamic_array_bounded_str; }; };";
+        match parse(input) {
+            Ok(definitions) => {
+                println!("{:?}", definitions);
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                panic!();
+            }
+        }
+    }
+
+    #[test]
     fn parser_complex() {
         let input = r#"
 module example_msg {

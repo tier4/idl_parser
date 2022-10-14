@@ -90,7 +90,8 @@ fn parse_annotation_member(input: Span) -> PResult<AnnotationMember> {
 
     let (input, default_value) =
         if let Ok((input, _)) = tuple((skip_space_and_comment0, tag("default")))(input) {
-            let (input, (_, expr)) = tuple((skip_space_and_comment1, parse_const_expr))(input)?;
+            let (input, (_, expr)) =
+                tuple((skip_space_and_comment1, |i| parse_const_expr(i, true)))(input)?;
             (input, Some(expr))
         } else {
             (input, None)
@@ -146,7 +147,7 @@ fn parse_annotation_appl_params(input: Span) -> PResult<AnnotationApplParams> {
     }
 
     fn const_expr(input: Span) -> PResult<AnnotationApplParams> {
-        let (input, result) = parse_const_expr(input)?;
+        let (input, result) = parse_const_expr(input, true)?;
         Ok((input, AnnotationApplParams::ConstExpr(result)))
     }
 
@@ -159,7 +160,7 @@ fn parse_annotation_appl_params(input: Span) -> PResult<AnnotationApplParams> {
 fn parse_annotation_appl_param(input: Span) -> PResult<AnnotationApplParam> {
     let (input, id) = parse_id(input)?;
     let (input, _) = delimiter("=")(input)?;
-    let (input, expr) = parse_const_expr(input)?;
+    let (input, expr) = parse_const_expr(input, true)?;
     Ok((input, AnnotationApplParam { id, expr }))
 }
 

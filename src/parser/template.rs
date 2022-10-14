@@ -155,7 +155,7 @@ fn parse_actual_parameter(input: Span) -> PResult<ActualParameter> {
     }
 
     fn const_expr(input: Span) -> PResult<ActualParameter> {
-        let (input, result) = parse_const_expr(input)?;
+        let (input, result) = parse_const_expr(input, false)?;
         Ok((input, ActualParameter::ConstExpr(result)))
     }
 
