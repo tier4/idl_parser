@@ -6,7 +6,6 @@ A parser for the interface definition language (IDL) specified by Object Managem
 
 ```rust
 use t4_idl_parser::{parse, Span};
-use nom::Finish;
 use nom_greedyerror::convert_error;
 
 let input = r#"
@@ -25,13 +24,12 @@ module example_msg {
     };
 };"#;
 
-match parse(input).finish() {
-    Ok((_, result)) => {
+match parse(input) {
+    Ok(result) => {
         println!("{:#?}", result);
     }
     Err(e) => {
-        let msg = convert_error(input, e);
-        eprintln!("{msg}");
+        eprintln!("{e}");
         panic!();
     }
 }

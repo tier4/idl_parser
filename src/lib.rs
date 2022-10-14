@@ -6,7 +6,6 @@
 ///
 /// ```
 /// use t4_idl_parser::{parse, Span};
-/// use nom::Finish;
 /// use nom_greedyerror::convert_error;
 ///
 /// let input = r#"
@@ -25,13 +24,12 @@
 ///     };
 /// };"#;
 ///
-/// match parse(input).finish() {
-///     Ok((_, result)) => {
+/// match parse(input) {
+///     Ok(result) => {
 ///         println!("{:?}", result);
 ///     }
 ///     Err(e) => {
-///         let msg = convert_error(input, e);
-///         eprintln!("{msg}");
+///         eprintln!("{e}");
 ///         panic!();
 ///     }
 /// }

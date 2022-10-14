@@ -10,40 +10,50 @@ use crate::{expr::AnnotationAndDef, parser::core::skip_space_and_comment0};
 use nom::{
     combinator::eof,
     error::{Error, ErrorKind},
-    IResult,
+    Finish, IResult,
 };
-use nom_greedyerror::GreedyError;
+use nom_greedyerror::{convert_error, GreedyError};
 use nom_locate::LocatedSpan;
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
 type PResult<'a, OUT> = IResult<Span<'a>, OUT, GreedyError<Span<'a>, ErrorKind>>;
+type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
-pub fn parse(input: &str) -> PResult<Vec<AnnotationAndDef>> {
-    let mut input = Span::new(input);
+pub fn parse(input: &str) -> Result<Vec<AnnotationAndDef>, DynError> {
+    fn do_parse(input: &str) -> PResult<Vec<AnnotationAndDef>> {
+        let mut input = Span::new(input);
 
-    let mut result = Vec::new();
-    loop {
-        let (i, m) = core::parse_definition(input)?;
-        let (i, _) = skip_space_and_comment0(i)?;
+        let mut result = Vec::new();
+        loop {
+            let (i, m) = core::parse_definition(input)?;
+            let (i, _) = skip_space_and_comment0(i)?;
 
-        result.push(m);
+            result.push(m);
 
-        if let Ok((_, _)) = eof::<Span, Error<Span>>(i) {
-            break;
+            if let Ok((_, _)) = eof::<Span, Error<Span>>(i) {
+                break;
+            }
+
+            input = i;
         }
 
-        input = i;
+        Ok((input, result))
     }
 
-    Ok((input, result))
+    match do_parse(input).finish() {
+        Ok((_, definitions)) => Ok(definitions),
+        Err(e) => {
+            let msg = convert_error(input, e);
+            Err(msg.into())
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{core::skip_space_and_comment0, Span};
     use crate::parse;
-    use nom::Finish;
     use nom_greedyerror::convert_error;
 
     #[test]
@@ -65,13 +75,12 @@ module example_msg {
   };
 };"#;
 
-        match parse(input).finish() {
-            Ok((_, definitions)) => {
+        match parse(input) {
+            Ok(definitions) => {
                 println!("{:#?}", definitions);
             }
             Err(e) => {
-                let msg = convert_error(input, e);
-                eprintln!("{msg}");
+                eprintln!("{e}");
                 panic!();
             }
         }
@@ -124,13 +133,12 @@ module example_msg {
     };
 };"#;
 
-        match parse(input).finish() {
-            Ok((_, definitions)) => {
+        match parse(input) {
+            Ok(definitions) => {
                 println!("{:?}", definitions);
             }
             Err(e) => {
-                let msg = convert_error(input, e);
-                eprintln!("{msg}");
+                eprintln!("e");
                 panic!();
             }
         }
@@ -261,13 +269,12 @@ module example_msg {
     };
 };"#;
 
-        match parse(input).finish() {
-            Ok((_, definitions)) => {
+        match parse(input) {
+            Ok(definitions) => {
                 println!("{:?}", definitions);
             }
             Err(e) => {
-                let msg = convert_error(input, e);
-                eprintln!("{msg}");
+                eprintln!("{e}");
                 panic!();
             }
         }
