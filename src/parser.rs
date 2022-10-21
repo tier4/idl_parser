@@ -117,6 +117,7 @@ abc */
 module example_msg {
     module srv {
         struct AddThreeInts_Request {
+            @default (value=0.0)
             int64 a;
 
             int64 b;

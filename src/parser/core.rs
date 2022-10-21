@@ -617,10 +617,12 @@ fn parse_num(input: Span) -> PResult<Literal> {
     let (input, sign) = parse_sign(input)?;
 
     let (input, mut integer) = if let Ok((input, _)) = tag::<&str, Span, Error<Span>>("0.")(input) {
+        // floating point
         (input, BigInt::zero())
     } else {
         let (input, num) = parse_decimal(input)?;
         if let Ok((input, _)) = tag::<&str, Span, Error<Span>>(".")(input) {
+            // floating point
             (input, num)
         } else {
             // decimal
@@ -631,40 +633,55 @@ fn parse_num(input: Span) -> PResult<Literal> {
 
     // floating- or fixed-point
     let (input, fraction) = digit1(input)?;
-    let (input, c) = alt((tag("d"), tag("D"), tag("e"), tag("E")))(input)?;
-    match c.as_str() {
-        "d" | "D" => {
-            let mut scale = 0;
-            for n in fraction.bytes() {
-                let val = n - b'0';
-                integer *= 10;
-                integer += val;
-                scale += 1;
+    if let Ok((input, c)) = alt((
+        tag::<&str, Span, Error<Span>>("d"),
+        tag("D"),
+        tag("e"),
+        tag("E"),
+    ))(input)
+    {
+        match c.as_str() {
+            "d" | "D" => {
+                let mut scale = 0;
+                for n in fraction.bytes() {
+                    let val = n - b'0';
+                    integer *= 10;
+                    integer += val;
+                    scale += 1;
+                }
+                let value = if sign { integer * -1 } else { integer };
+                let result = Literal::FixedPoint(FixedPoint { value, scale });
+                Ok((input, result))
             }
-            let value = if sign { integer * -1 } else { integer };
-            let result = Literal::FixedPoint(FixedPoint { value, scale });
-            Ok((input, result))
-        }
-        "e" | "E" => {
-            let (input, exp_sign) =
-                tag::<&str, Span, VerboseError<Span>>("-")(input).unwrap_or((input, Span::new("")));
-            let sign = if sign { "-" } else { "" };
+            "e" | "E" => {
+                let (input, exp_sign) = tag::<&str, Span, VerboseError<Span>>("-")(input)
+                    .unwrap_or((input, Span::new("")));
+                let sign = if sign { "-" } else { "" };
 
-            let (input, float_num) = if exp_sign.as_str() == "-" {
-                let (input, exp) = parse_decimal(input)?;
-                (input, format!("{sign}{integer}.{fraction}e-{exp}"))
-            } else if let Ok((input, exp)) = parse_decimal(input) {
-                (input, format!("{sign}{integer}.{fraction}e{exp}"))
-            } else {
-                (input, format!("{sign}{integer}.{fraction}"))
-            };
+                let (input, float_num) = if exp_sign.as_str() == "-" {
+                    let (input, exp) = parse_decimal(input)?;
+                    (input, format!("{sign}{integer}.{fraction}e-{exp}"))
+                } else if let Ok((input, exp)) = parse_decimal(input) {
+                    (input, format!("{sign}{integer}.{fraction}e{exp}"))
+                } else {
+                    (input, format!("{sign}{integer}.{fraction}"))
+                };
 
-            let result = float_num
-                .parse::<f64>()
-                .expect("failed to parse a floating point number");
-            Ok((input, Literal::FloatingPoint(result)))
+                let result = float_num
+                    .parse::<f64>()
+                    .expect("failed to parse a floating point number");
+                Ok((input, Literal::FloatingPoint(result)))
+            }
+            _ => unreachable!(),
         }
-        _ => unreachable!(),
+    } else {
+        let sign = if sign { "-" } else { "" };
+        let float_num = format!("{sign}{integer}.{fraction}");
+        let result = float_num
+            .parse::<f64>()
+            .expect("failed to parse a floating point number");
+
+        Ok((input, Literal::FloatingPoint(result)))
     }
 }
 
@@ -1583,6 +1600,9 @@ mod tests {
 
     #[test]
     fn literal() {
+        let input = Span::new("0.0");
+        assert_eq!(parse_literal(input).unwrap().1, Literal::FloatingPoint(0.0));
+
         let input = Span::new("1234");
         assert_eq!(
             parse_literal(input).unwrap().1,

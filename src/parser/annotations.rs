@@ -159,8 +159,11 @@ fn parse_annotation_appl_params(input: Span) -> PResult<AnnotationApplParams> {
 /// ```
 fn parse_annotation_appl_param(input: Span) -> PResult<AnnotationApplParam> {
     let (input, id) = parse_id(input)?;
+    println!("<annotation_appl_param>: id = {id}");
     let (input, _) = delimiter("=")(input)?;
+    println!("<annotation_appl_param>: delimiter");
     let (input, expr) = parse_const_expr(input, true)?;
+    println!("<annotation_appl_param>: expr = {:?}", expr);
     Ok((input, AnnotationApplParam { id, expr }))
 }
 
