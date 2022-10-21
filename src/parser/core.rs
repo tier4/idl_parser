@@ -793,7 +793,7 @@ fn parse_char(input: Span) -> PResult<Literal> {
 
 fn parse_char_escape(input: Span) -> PResult<char> {
     if let Ok((input, _)) = tag::<&str, Span, Error<Span>>("\\")(input) {
-        let (input, c) = one_of("ntvbrfa?\\'\"oxu")(input)?;
+        let (input, c) = anychar(input)?;
         match c {
             'n' => Ok((input, LF)),
             't' => Ok((input, HT)),
@@ -856,7 +856,7 @@ fn parse_char_escape(input: Span) -> PResult<char> {
                     fail(original)
                 }
             }
-            _ => unreachable!(),
+            c => Ok((input, c)),
         }
     } else {
         anychar(input)
@@ -1600,6 +1600,12 @@ mod tests {
 
     #[test]
     fn literal() {
+        let input = Span::new(r#""\(text\)""#);
+        assert_eq!(
+            parse_string(input).unwrap().1,
+            Literal::String(r#"(text)"#.to_string())
+        );
+
         let input = Span::new("0.0");
         assert_eq!(parse_literal(input).unwrap().1, Literal::FloatingPoint(0.0));
 

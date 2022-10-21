@@ -58,20 +58,23 @@ mod tests {
     #[test]
     fn parser() {
         let input = r#"
-// generated from rosidl_adapter/resource/msg.idl.em
-// with input from example_msg/bar/Buz.msg
-// generated code does not contain a copyright notice
+module autoware_auto_vehicle_msgs {
+    module msg {
+        @verbatim (language="comment", text=
+        " Command to avoid stationary locking \(Park gear, Parking Brake, etc.\)."
+        " This command assumes that the VehicleInterface or lower levels are controlling"
+        " the mechanism by which a vehicle is prevented from moving \(\"stationary locking\"\)"
+        " and will automatically attempt to apply stationary locking if a 0-velocity command"
+        " is applied for an arbitrary period of time. Setting the avoid_stationary_locking"
+        " field to TRUE tells the VehicleInterface or lower levels to avoid making this transition.")
 
+        struct StationaryLockingCommand {
+            builtin_interfaces::msg::Time stamp;
 
-module example_msg {
-  module msg {
-    struct Buz {
-      string c;
-
-      @verbatim (language="comment", text="http://wiki.ros.org/std_msgs")
-      sequence<int32> o;
+            @default (value=FALSE)
+            boolean avoid_stationary_locking;
+        };
     };
-  };
 };"#;
 
         match parse(input) {
