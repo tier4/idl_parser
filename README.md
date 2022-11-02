@@ -97,3 +97,7 @@ This will output a result as follows.
     ),
 ]
 ```
+
+# Limitation
+
+C/C++ like preprocessor is not supported.
