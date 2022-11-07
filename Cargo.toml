@@ -1,13 +1,13 @@
 [package]
 name = "t4_idl_parser"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = [ "Yuuki Takano <yuuki.takano@tier4.jp>, TIER IV, Inc." ]
 description = "A parser for the interface definition language (IDL) specified by Object Management Group (OMG)  written in Rust. This supports IDL version 4.2."
 license-file = "LICENSE"
 readme = "README.md"
 keywords = ["parser", "IDL" ]
-categories = [ "parser" ]
+categories = [ "parser-implementations", "parsing" ]
 repository = "https://github.com/tier4/idl_parser"
 homepage = "https://github.com/tier4/idl_parser"
 
